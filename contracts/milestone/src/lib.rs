@@ -551,9 +551,7 @@ impl MilestoneContract {
             .persistent()
             .get(&DataKey::Mode(quest_id))
             .unwrap_or(DistributionMode::Custom);
-        if env.storage().persistent().get(&count_key).unwrap_or(0u32) > 0
-            && current_mode != mode
-        {
+        if env.storage().persistent().get(&count_key).unwrap_or(0u32) > 0 && current_mode != mode {
             return Err(Error::InvalidInput);
         }
 

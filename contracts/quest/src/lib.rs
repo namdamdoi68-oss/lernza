@@ -1,7 +1,7 @@
 #![no_std]
 use common::{
-    extend_instance_ttl, is_contract_address, QuestInfo, QuestStatus, QuestVersion, Visibility,
-    BUMP, THRESHOLD,
+    extend_instance_ttl, is_contract_address, QuestInfo, QuestStatus, QuestVersion, UserStatus,
+    Visibility, BUMP, THRESHOLD,
 };
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, Address, Bytes, BytesN, Env, String,
@@ -29,6 +29,7 @@ pub enum DataKey {
     Admin,
     Paused,
     VerifiedCreator(Address),
+    UserStatus(Address),
     /// Registered invite commitment: SHA-256 hash stored by the quest owner.
     /// Key: (quest_id, commitment_hash). Value: true.
     InviteCommitment(u32, BytesN<32>),
@@ -1018,6 +1019,61 @@ impl QuestContract {
         let enrollees = Self::load_enrollees(&env, quest_id);
         Self::bump(&env, quest_id);
         Ok(enrollees)
+    }
+
+    /// Get all active participants for a quest, excluding suspended or inactive users.
+    pub fn get_participants(env: Env, quest_id: u32) -> Result<Vec<Address>, Error> {
+        Self::load_quest(&env, quest_id)?;
+        let enrollees = Self::load_enrollees(&env, quest_id);
+        let mut active_participants = Vec::new(&env);
+        for enrollee in enrollees.iter() {
+            let status = Self::get_user_status(env.clone(), enrollee.clone());
+            if status != UserStatus::Suspended && status != UserStatus::Inactive {
+                active_participants.push_back(enrollee);
+            }
+        }
+        Self::bump(&env, quest_id);
+        Ok(active_participants)
+    }
+
+    /// Suspend a user address. Admin only.
+    pub fn suspend_user(env: Env, admin: Address, user: Address) -> Result<(), Error> {
+        Self::require_admin(&env, &admin)?;
+        Self::require_not_paused(&env)?;
+        let key = DataKey::UserStatus(user.clone());
+        env.storage().persistent().set(&key, &UserStatus::Suspended);
+        common::extend_persistent_ttl(&env, &key);
+        let ts = env.ledger().timestamp();
+        env.events()
+            .publish((Symbol::new(&env, "user_suspended"),), (user, admin, ts));
+        Ok(())
+    }
+
+    /// Reactivate a suspended user address. Admin only.
+    pub fn reactivate_user(env: Env, admin: Address, user: Address) -> Result<(), Error> {
+        Self::require_admin(&env, &admin)?;
+        Self::require_not_paused(&env)?;
+        let key = DataKey::UserStatus(user.clone());
+        env.storage().persistent().set(&key, &UserStatus::Active);
+        common::extend_persistent_ttl(&env, &key);
+        let ts = env.ledger().timestamp();
+        env.events()
+            .publish((Symbol::new(&env, "user_reactivated"),), (user, admin, ts));
+        Ok(())
+    }
+
+    /// Returns the status of a user address (defaults to Active if unassigned).
+    pub fn get_user_status(env: Env, user: Address) -> UserStatus {
+        let key = DataKey::UserStatus(user);
+        let status = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(UserStatus::Active);
+        if env.storage().persistent().has(&key) {
+            common::extend_persistent_ttl(&env, &key);
+        }
+        status
     }
 
     /// Check if a user is enrolled in a quest.
