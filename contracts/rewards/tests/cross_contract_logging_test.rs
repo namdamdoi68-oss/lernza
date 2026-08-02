@@ -1,9 +1,10 @@
+use soroban_sdk::TryFromVal;
 use certificate::{CertificateContract, CertificateContractClient};
 use common::Visibility;
 use milestone::{MilestoneContract, MilestoneContractClient};
 use quest::{QuestContract, QuestContractClient};
 use rewards::{RewardsContract, RewardsContractClient};
-use soroban_sdk::{testutils::Address as _, token::StellarAssetClient, Address, Env, String, Vec};
+use soroban_sdk::{testutils::{Address as _, Events}, token::StellarAssetClient, Address, Env, String, Vec};
 
 #[test]
 fn test_fund_quest_emits_cross_contract_log() {
@@ -46,6 +47,7 @@ fn test_fund_quest_emits_cross_contract_log() {
         &token_addr,
         &Visibility::Public,
         &None,
+        &None,
     );
     QuestContractClient::new(&env, &quest_id).add_enrollee(&0u32, &enrollee);
 
@@ -56,13 +58,15 @@ fn test_fund_quest_emits_cross_contract_log() {
     RewardsContractClient::new(&env, &rewards_id).fund_quest(&owner, &0u32, &5_000_i128);
 
     // Collect events and assert cross_contract_call exists
-    let events = env.events().all();
+        let events = env.events().all();
     let mut found = false;
+    let expected_sym = soroban_sdk::Symbol::new(&env, "cross_contract_call");
     for e in events.iter() {
-        if e.topics().len() > 0 {
-            let sym = e.topics().get(0).unwrap();
-            if sym.as_str() == "cross_contract_call" {
-                found = true;
+        if e.1.len() > 0 {
+            if let Ok(sym) = soroban_sdk::Symbol::try_from_val(&env, &e.1.get(0).unwrap()) {
+                if sym == expected_sym {
+                    found = true;
+                }
             }
         }
     }

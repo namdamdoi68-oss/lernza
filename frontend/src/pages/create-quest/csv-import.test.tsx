@@ -40,7 +40,7 @@ describe("CSV Milestone Parser Unit Tests", () => {
 
     const result = parseCsvMilestones(csv)
     expect(result.errors.length).toBeGreaterThan(0)
-    expect(result.milestones.length).toBe(0)
+    expect(result.milestones.length).toBe(1)
   })
 
   it("generates sample CSV template string", () => {

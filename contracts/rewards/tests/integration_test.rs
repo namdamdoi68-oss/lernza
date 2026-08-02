@@ -23,9 +23,9 @@
 
 use certificate::{CertificateContract, CertificateContractClient};
 use common::Visibility;
-use milestone::{Error as MilestoneError, MilestoneContract, MilestoneContractClient};
+use milestone::{MilestoneError as MilestoneError, MilestoneContract, MilestoneContractClient};
 use quest::{QuestContract, QuestContractClient};
-use rewards::{Error as RewardsError, RewardsContract, RewardsContractClient};
+use rewards::{RewardsErrorEnum as RewardsError, RewardsContract, RewardsContractClient};
 use soroban_sdk::{
     testutils::Address as _,
     token::{StellarAssetClient, TokenClient},

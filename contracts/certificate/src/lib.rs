@@ -1,12 +1,12 @@
 #![no_std]
 
-use common::{extend_instance_ttl, extend_persistent_ttl, BUMP, THRESHOLD};
+use common::{extend_instance_ttl, extend_persistent_ttl};
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, Address, BytesN, Env, String, Symbol, Vec,
 };
-use stellar_access::ownable::{self as ownable, Ownable};
-use stellar_macros::{default_impl, only_owner};
-use stellar_tokens::non_fungible::{burnable::NonFungibleBurnable, Base, NonFungibleToken};
+use stellar_access::ownable::{self as ownable};
+use stellar_macros::only_owner;
+use stellar_tokens::non_fungible::Base;
 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
@@ -36,20 +36,20 @@ impl common::IsDataKey for DataKey {}
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
-pub enum Error {
+pub enum CertificateErrorEnum {
     /// Entity not found (shared code 1).
-    NotFound = common::ERR_NOT_FOUND as u32,
+    NotFound = 1,
     /// Caller is not authorized (shared code 2).
-    Unauthorized = common::ERR_UNAUTHORIZED as u32,
+    Unauthorized = 2,
     /// Invalid input provided (shared code 3).
-    InvalidInput = common::ERR_INVALID_INPUT as u32,
+    InvalidInput = 3,
     NotOwner = 10,
     AlreadyIssued = 20,
     InvalidQuest = 5,
     AlreadyRevoked = 6,
     MetadataBaseNotSet = 7,
     /// Contract is administratively paused (shared code 400).
-    Paused = common::ERR_PAUSED as u32,
+    Paused = 400,
 }
 
 // BUMP and THRESHOLD now come from common
@@ -72,14 +72,14 @@ impl CertificateContract {
     }
 
     /// Returns the owner, which is this contract's administrator role.
-    pub fn get_admin(env: Env) -> Result<Address, Error> {
-        ownable::get_owner(&env).ok_or(Error::NotOwner)
+    pub fn get_admin(env: Env) -> Result<Address, CertificateErrorEnum> {
+        ownable::get_owner(&env).ok_or(CertificateErrorEnum::NotOwner)
     }
 
     /// Upgrade this contract's WASM. The `only_owner` guard enforces the
     /// administrator role before Soroban replaces the current code.
     #[only_owner]
-    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), Error> {
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), CertificateErrorEnum> {
         env.deployer().update_current_contract_wasm(new_wasm_hash);
         Ok(())
     }
@@ -92,11 +92,11 @@ impl CertificateContract {
         quest_category: String,
         recipient: Address,
         issuer: Address,
-    ) -> Result<u32, Error> {
+    ) -> Result<u32, CertificateErrorEnum> {
         Self::require_not_paused(&env)?;
         let cert_key = DataKey::QuestCertificate(quest_id, recipient.clone());
         if env.storage().persistent().has(&cert_key) {
-            return Err(Error::AlreadyIssued);
+            return Err(CertificateErrorEnum::AlreadyIssued);
         }
 
         let token_id = Base::sequential_mint(&env, &recipient);
@@ -137,18 +137,27 @@ impl CertificateContract {
         Ok(token_id)
     }
 
-    pub fn get_certificate_metadata(env: Env, token_id: u32) -> Result<CertificateMetadata, Error> {
+    pub fn get_certificate_metadata(
+        env: Env,
+        token_id: u32,
+    ) -> Result<CertificateMetadata, CertificateErrorEnum> {
         let key = DataKey::CertificateMetadata(token_id);
-        env.storage().persistent().get(&key).ok_or(Error::NotFound)
+        env.storage()
+            .persistent()
+            .get(&key)
+            .ok_or(CertificateErrorEnum::NotFound)
     }
 
     pub fn get_quest_certificate(
         env: Env,
         quest_id: u32,
         recipient: Address,
-    ) -> Result<u32, Error> {
+    ) -> Result<u32, CertificateErrorEnum> {
         let key = DataKey::QuestCertificate(quest_id, recipient);
-        env.storage().persistent().get(&key).ok_or(Error::NotFound)
+        env.storage()
+            .persistent()
+            .get(&key)
+            .ok_or(CertificateErrorEnum::NotFound)
     }
 
     pub fn get_user_certificates(env: Env, user: Address) -> Vec<u32> {
@@ -170,16 +179,16 @@ impl CertificateContract {
         quest_name: String,
         quest_category: String,
         recipient: Address,
-    ) -> Result<u32, Error> {
+    ) -> Result<u32, CertificateErrorEnum> {
         Self::require_not_paused(&env)?;
-        let owner = ownable::get_owner(&env).ok_or(Error::NotOwner)?;
+        let owner = ownable::get_owner(&env).ok_or(CertificateErrorEnum::NotOwner)?;
         Self::mint_certificate(env, quest_id, quest_name, quest_category, recipient, owner)
     }
 
     pub fn get_certificate_details(
         env: Env,
         token_id: u32,
-    ) -> Result<(CertificateMetadata, Address), Error> {
+    ) -> Result<(CertificateMetadata, Address), CertificateErrorEnum> {
         let metadata = Self::get_certificate_metadata(env.clone(), token_id)?;
         let owner = Base::owner_of(&env, token_id);
         Ok((metadata, owner))
@@ -204,13 +213,13 @@ impl CertificateContract {
     }
 
     #[only_owner]
-    pub fn revoke_certificate(env: Env, token_id: u32) -> Result<(), Error> {
+    pub fn revoke_certificate(env: Env, token_id: u32) -> Result<(), CertificateErrorEnum> {
         if env
             .storage()
             .persistent()
             .has(&DataKey::RevokedCertificate(token_id))
         {
-            return Err(Error::AlreadyRevoked);
+            return Err(CertificateErrorEnum::AlreadyRevoked);
         }
 
         let metadata = Self::get_certificate_metadata(env.clone(), token_id)?;
@@ -255,18 +264,18 @@ impl CertificateContract {
     }
 
     #[only_owner]
-    pub fn set_metadata_base(env: Env, uri: String) -> Result<(), Error> {
+    pub fn set_metadata_base(env: Env, uri: String) -> Result<(), CertificateErrorEnum> {
         env.storage().instance().set(&DataKey::MetadataBase, &uri);
         env.events()
             .publish((Symbol::new(&env, "metadata_base_updated"),), uri);
         Ok(())
     }
 
-    pub fn get_metadata_base(env: Env) -> Result<String, Error> {
+    pub fn get_metadata_base(env: Env) -> Result<String, CertificateErrorEnum> {
         env.storage()
             .instance()
             .get(&DataKey::MetadataBase)
-            .ok_or(Error::MetadataBaseNotSet)
+            .ok_or(CertificateErrorEnum::MetadataBaseNotSet)
     }
 
     pub fn is_revoked(env: Env, token_id: u32) -> bool {
@@ -276,7 +285,7 @@ impl CertificateContract {
     }
 
     #[only_owner]
-    pub fn pause(env: Env) -> Result<(), Error> {
+    pub fn pause(env: Env) -> Result<(), CertificateErrorEnum> {
         env.storage().instance().set(&DataKey::Paused, &true);
         extend_instance_ttl(&env);
         env.events().publish((Symbol::new(&env, "paused"),), ());
@@ -284,34 +293,89 @@ impl CertificateContract {
     }
 
     #[only_owner]
-    pub fn unpause(env: Env) -> Result<(), Error> {
+    pub fn unpause(env: Env) -> Result<(), CertificateErrorEnum> {
         env.storage().instance().set(&DataKey::Paused, &false);
         extend_instance_ttl(&env);
         env.events().publish((Symbol::new(&env, "unpaused"),), ());
         Ok(())
     }
 
-    fn require_not_paused(env: &Env) -> Result<(), Error> {
+    fn require_not_paused(env: &Env) -> Result<(), CertificateErrorEnum> {
         if common::is_paused_by_key(env, &DataKey::Paused) {
-            return Err(Error::Paused);
+            return Err(CertificateErrorEnum::Paused);
         }
         Ok(())
     }
 }
 
-#[default_impl]
-#[contractimpl]
-impl NonFungibleToken for CertificateContract {
-    type ContractType = Base;
-}
-
-#[default_impl]
-#[contractimpl]
-impl NonFungibleBurnable for CertificateContract {}
-
-#[default_impl]
-#[contractimpl]
-impl Ownable for CertificateContract {}
-
 #[cfg(test)]
 mod test;
+
+impl stellar_tokens::non_fungible::NonFungibleToken for CertificateContract {
+    type ContractType = stellar_tokens::non_fungible::Base;
+    fn balance(env: &Env, owner: Address) -> u32 {
+        stellar_tokens::non_fungible::Base::balance(env, &owner)
+    }
+    fn owner_of(env: &Env, token_id: u32) -> Address {
+        stellar_tokens::non_fungible::Base::owner_of(env, token_id)
+    }
+    fn transfer(env: &Env, from: Address, to: Address, token_id: u32) {
+        stellar_tokens::non_fungible::Base::transfer(env, &from, &to, token_id)
+    }
+    fn transfer_from(env: &Env, spender: Address, from: Address, to: Address, token_id: u32) {
+        stellar_tokens::non_fungible::Base::transfer_from(env, &spender, &from, &to, token_id)
+    }
+    fn approve(
+        env: &Env,
+        approver: Address,
+        approved: Address,
+        token_id: u32,
+        live_until_ledger: u32,
+    ) {
+        stellar_tokens::non_fungible::Base::approve(
+            env,
+            &approver,
+            &approved,
+            token_id,
+            live_until_ledger,
+        )
+    }
+    fn approve_for_all(env: &Env, owner: Address, operator: Address, live_until_ledger: u32) {
+        stellar_tokens::non_fungible::Base::approve_for_all(
+            env,
+            &owner,
+            &operator,
+            live_until_ledger,
+        )
+    }
+    fn get_approved(env: &Env, token_id: u32) -> Option<Address> {
+        stellar_tokens::non_fungible::Base::get_approved(env, token_id)
+    }
+    fn is_approved_for_all(env: &Env, owner: Address, operator: Address) -> bool {
+        stellar_tokens::non_fungible::Base::is_approved_for_all(env, &owner, &operator)
+    }
+    fn name(env: &Env) -> String {
+        stellar_tokens::non_fungible::Base::name(env)
+    }
+    fn symbol(env: &Env) -> String {
+        stellar_tokens::non_fungible::Base::symbol(env)
+    }
+    fn token_uri(env: &Env, token_id: u32) -> String {
+        stellar_tokens::non_fungible::Base::token_uri(env, token_id)
+    }
+}
+
+impl stellar_access::ownable::Ownable for CertificateContract {
+    fn get_owner(env: &Env) -> Option<Address> {
+        stellar_access::ownable::get_owner(env)
+    }
+    fn transfer_ownership(env: &Env, new_owner: Address, live_until_ledger: u32) {
+        stellar_access::ownable::transfer_ownership(env, &new_owner, live_until_ledger)
+    }
+    fn accept_ownership(env: &Env) {
+        stellar_access::ownable::accept_ownership(env)
+    }
+    fn renounce_ownership(env: &Env) {
+        stellar_access::ownable::renounce_ownership(env)
+    }
+}

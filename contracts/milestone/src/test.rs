@@ -1,5 +1,8 @@
 use super::*;
-use soroban_sdk::{testutils::Address as _, testutils::Events, Address, Env, String, Vec};
+use soroban_sdk::{
+    testutils::{Address as _, Events, Ledger},
+    Address, Env, String, Vec,
+};
 
 // Import the quest contract for testing
 extern crate certificate;
@@ -118,7 +121,7 @@ fn test_pause_blocks_milestone_writes_until_unpaused() {
         &100,
         &false,
     );
-    assert_eq!(create_result, Err(Ok(Error::Paused)));
+    assert_eq!(create_result, Err(Ok(MilestoneError::Paused)));
 
     client.unpause(&owner);
     let milestone_id = create_ms(&env, &client, &owner, q_id, "Task 1", 50);
@@ -127,7 +130,7 @@ fn test_pause_blocks_milestone_writes_until_unpaused() {
 
     client.pause(&owner);
     let verify_result = client.try_verify_completion(&owner, &q_id, &milestone_id, &enrollee);
-    assert_eq!(verify_result, Err(Ok(Error::Paused)));
+    assert_eq!(verify_result, Err(Ok(MilestoneError::Paused)));
 
     client.unpause(&owner);
     assert_eq!(
@@ -236,7 +239,7 @@ fn test_verify_completion_requires_previous() {
     quest_client.add_enrollee(&q_id, &enrollee);
 
     let blocked = client.try_verify_completion(&owner, &q_id, &sequential_id, &enrollee);
-    assert_eq!(blocked, Err(Ok(Error::MilestoneNotUnlocked)));
+    assert_eq!(blocked, Err(Ok(MilestoneError::MilestoneNotUnlocked)));
 
     client.verify_completion(&owner, &q_id, &0, &enrollee);
     let reward = client.verify_completion(&owner, &q_id, &sequential_id, &enrollee);
@@ -274,7 +277,7 @@ fn test_double_verify_fails() {
     client.verify_completion(&owner, &q_id, &0, &enrollee);
 
     let result = client.try_verify_completion(&owner, &q_id, &0, &enrollee);
-    assert_eq!(result, Err(Ok(Error::AlreadyCompleted)));
+    assert_eq!(result, Err(Ok(MilestoneError::AlreadyCompleted)));
 }
 
 #[test]
@@ -286,7 +289,7 @@ fn test_wrong_owner_cannot_verify() {
     let imposter = Address::generate(&env);
     let enrollee = Address::generate(&env);
     let result = client.try_verify_completion(&imposter, &q_id, &0, &enrollee);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(MilestoneError::Unauthorized)));
 }
 
 #[test]
@@ -306,14 +309,14 @@ fn test_wrong_owner_cannot_create() {
         &999,
         &false,
     );
-    assert_eq!(result, Err(Ok(Error::OwnerMismatch)));
+    assert_eq!(result, Err(Ok(MilestoneError::OwnerMismatch)));
 }
 
 #[test]
 fn test_milestone_not_found() {
     let (_env, client, _quest_client, _owner) = setup();
     let result = client.try_get_milestone(&0, &999);
-    assert_eq!(result, Err(Ok(Error::NotFound)));
+    assert_eq!(result, Err(Ok(MilestoneError::NotFound)));
 }
 
 #[test]
@@ -339,7 +342,7 @@ fn test_zero_reward_milestone() {
         &0,
         &false,
     );
-    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+    assert_eq!(result, Err(Ok(MilestoneError::InvalidAmount)));
 }
 
 // --- distribution mode tests ---
@@ -372,11 +375,11 @@ fn test_get_distribution_mode_and_flat_reward_after_set() {
 fn test_percentage_mode_rounding_to_nearest() {
     let (env, client, quest_client, owner) = setup();
     let q_id = create_quest(&env, &quest_client, &owner);
+    // Set Percentage mode to 75% BEFORE creating milestones
+    client.set_distribution_mode(&owner, &q_id, &DistributionMode::Percentage(75), &0);
+
     // Milestone with reward_amount 101 to exercise rounding (75% -> 75.75)
     create_ms(&env, &client, &owner, q_id, "Task", 101);
-
-    // Set Percentage mode to 75%
-    client.set_distribution_mode(&owner, &q_id, &DistributionMode::Percentage(75), &0);
 
     let enrollee = Address::generate(&env);
     quest_client.add_enrollee(&q_id, &enrollee);
@@ -386,8 +389,8 @@ fn test_percentage_mode_rounding_to_nearest() {
 
     // Now test exact case: 100 * 75% = 75
     let q2 = create_quest(&env, &quest_client, &owner);
-    create_ms(&env, &client, &owner, q2, "Task2", 100);
     client.set_distribution_mode(&owner, &q2, &DistributionMode::Percentage(75), &0);
+    create_ms(&env, &client, &owner, q2, "Task2", 100);
     let e2 = Address::generate(&env);
     quest_client.add_enrollee(&q2, &e2);
     assert_eq!(client.verify_completion(&owner, &q2, &0, &e2), 75);
@@ -436,7 +439,7 @@ fn test_flat_mode_fails_with_zero_reward() {
     create_ms(&env, &client, &owner, q_id, "Task", 100);
 
     let result = client.try_set_distribution_mode(&owner, &q_id, &DistributionMode::Flat, &0);
-    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+    assert_eq!(result, Err(Ok(MilestoneError::InvalidAmount)));
     assert_eq!(
         client.get_distribution_mode(&q_id),
         DistributionMode::Custom
@@ -452,7 +455,7 @@ fn test_competitive_mode_fails_with_zero_winners() {
 
     let result =
         client.try_set_distribution_mode(&owner, &q_id, &DistributionMode::Competitive(0), &0);
-    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+    assert_eq!(result, Err(Ok(MilestoneError::InvalidInput)));
     assert_eq!(
         client.get_distribution_mode(&q_id),
         DistributionMode::Custom
@@ -466,7 +469,7 @@ fn test_competitive_mode_rejects_excessive_winner_limit() {
     let q_id = create_quest(&env, &quest_client, &owner);
     let result =
         client.try_set_distribution_mode(&owner, &q_id, &DistributionMode::Competitive(1_001), &0);
-    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+    assert_eq!(result, Err(Ok(MilestoneError::InvalidInput)));
 }
 
 #[test]
@@ -642,7 +645,7 @@ fn test_mode_cannot_change_after_milestones_exist() {
 
     // Attempt to switch to Flat mode after milestones exist
     let result = client.try_set_distribution_mode(&owner, &q_id, &DistributionMode::Flat, &50);
-    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+    assert_eq!(result, Err(Ok(MilestoneError::InvalidInput)));
 }
 
 #[test]
@@ -672,7 +675,7 @@ fn test_flat_mode_with_zero_enrollees() {
     // Attempting to verify completion for non-enrollee should fail
     let random_addr = Address::generate(&env);
     let result = client.try_verify_completion(&owner, &q_id, &0, &random_addr);
-    assert_eq!(result, Err(Ok(Error::NotEnrolled)));
+    assert_eq!(result, Err(Ok(MilestoneError::NotEnrolled)));
 }
 
 #[test]
@@ -688,7 +691,7 @@ fn test_competitive_mode_with_zero_enrollees() {
     // No enrollees - any completion attempt should fail
     let random_addr = Address::generate(&env);
     let result = client.try_verify_completion(&owner, &q_id, &0, &random_addr);
-    assert_eq!(result, Err(Ok(Error::NotEnrolled)));
+    assert_eq!(result, Err(Ok(MilestoneError::NotEnrolled)));
 }
 
 #[test]
@@ -700,7 +703,7 @@ fn test_custom_mode_with_zero_enrollees() {
     // Custom mode is default, no enrollees added
     let random_addr = Address::generate(&env);
     let result = client.try_verify_completion(&owner, &q_id, &0, &random_addr);
-    assert_eq!(result, Err(Ok(Error::NotEnrolled)));
+    assert_eq!(result, Err(Ok(MilestoneError::NotEnrolled)));
 }
 
 #[test]
@@ -714,11 +717,11 @@ fn test_flat_mode_rejects_zero_reward() {
     // 2. It could be used to grief quests by setting meaningless rewards
     // 3. The contract enforces reward > 0 to ensure meaningful incentives
     let result = client.try_set_distribution_mode(&owner, &q_id, &DistributionMode::Flat, &0);
-    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+    assert_eq!(result, Err(Ok(MilestoneError::InvalidAmount)));
 
     // Negative reward also rejected
     let result = client.try_set_distribution_mode(&owner, &q_id, &DistributionMode::Flat, &-10);
-    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+    assert_eq!(result, Err(Ok(MilestoneError::InvalidAmount)));
 }
 
 #[test]
@@ -775,7 +778,7 @@ fn test_milestone_ownership_race_condition() {
     );
 
     // Attack fails — attacker is not the quest owner
-    assert_eq!(result, Err(Ok(Error::OwnerMismatch)));
+    assert_eq!(result, Err(Ok(MilestoneError::OwnerMismatch)));
 
     // Legitimate owner can create milestones for their own quest
     let id = client.create_milestone(
@@ -796,7 +799,7 @@ fn test_milestone_ownership_race_condition() {
 
     // Attacker cannot verify completions
     let result = client.try_verify_completion(&attacker, &q_id, &0, &enrollee);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(MilestoneError::Unauthorized)));
 }
 
 /// HIGH-01: verify_completion accepts any enrollee address without checking
@@ -813,7 +816,7 @@ fn test_verify_completion_enrollee_check() {
 
     // Should fail with NotEnrolled (Issue #162 fix)
     let result = client.try_verify_completion(&owner, &q_id, &0, &unenrolled);
-    assert_eq!(result, Err(Ok(Error::NotEnrolled)));
+    assert_eq!(result, Err(Ok(MilestoneError::NotEnrolled)));
 }
 
 #[test]
@@ -829,7 +832,7 @@ fn test_get_quest_not_found_fails() {
         &100,
         &false,
     );
-    assert_eq!(result, Err(Ok(Error::NotFound)));
+    assert_eq!(result, Err(Ok(MilestoneError::NotFound)));
 }
 
 // ===== PEER VERIFICATION TESTS =====
@@ -849,11 +852,11 @@ fn test_peer_review_rejects_invalid_approval_bounds() {
     let q_id = create_quest(&env, &quest_client, &owner);
 
     let zero = client.try_set_verification_mode(&owner, &q_id, &VerificationMode::PeerReview(0));
-    assert_eq!(zero, Err(Ok(Error::InvalidInput)));
+    assert_eq!(zero, Err(Ok(MilestoneError::InvalidInput)));
 
     let excessive =
         client.try_set_verification_mode(&owner, &q_id, &VerificationMode::PeerReview(101));
-    assert_eq!(excessive, Err(Ok(Error::InvalidInput)));
+    assert_eq!(excessive, Err(Ok(MilestoneError::InvalidInput)));
 }
 
 #[test]
@@ -873,7 +876,7 @@ fn test_submit_for_review() {
 
     // Submitting again should fail
     let result = client.try_submit_for_review(&enrollee, &q_id, &0);
-    assert_eq!(result, Err(Ok(Error::AlreadySubmitted)));
+    assert_eq!(result, Err(Ok(MilestoneError::AlreadySubmitted)));
 }
 
 #[test]
@@ -887,7 +890,7 @@ fn test_submit_for_review_owner_only_mode_fails() {
 
     // Submit for review should fail in OwnerOnly mode
     let result = client.try_submit_for_review(&enrollee, &q_id, &0);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(MilestoneError::Unauthorized)));
 }
 
 #[test]
@@ -968,11 +971,12 @@ fn test_peer_review_respects_sequential_unlocks() {
     quest_client.add_enrollee(&q_id, &enrollee);
     quest_client.add_enrollee(&q_id, &peer);
 
-    client.submit_for_review(&enrollee, &q_id, &1);
-    let blocked = client.try_approve_completion(&peer, &q_id, &1, &enrollee);
-    assert_eq!(blocked, Err(Ok(Error::MilestoneNotUnlocked)));
+    // Submit for review - this should fail since Task 1 is not completed for enrollee
+    let blocked_submit = client.try_submit_for_review(&enrollee, &q_id, &1);
+    assert_eq!(blocked_submit, Err(Ok(MilestoneError::MilestoneNotUnlocked)));
 
     client.verify_completion(&owner, &q_id, &0, &enrollee);
+    client.submit_for_review(&enrollee, &q_id, &1);
     let approved = client.approve_completion(&peer, &q_id, &1, &enrollee);
     assert_eq!(approved, Some(100));
 }
@@ -993,7 +997,7 @@ fn test_self_approval_fails() {
 
     // Try to approve own submission - should fail
     let result = client.try_approve_completion(&enrollee, &q_id, &0, &enrollee);
-    assert_eq!(result, Err(Ok(Error::InvalidApprover)));
+    assert_eq!(result, Err(Ok(MilestoneError::InvalidApprover)));
 }
 
 #[test]
@@ -1017,7 +1021,7 @@ fn test_double_approval_fails() {
 
     // Second approval from same peer should fail
     let result = client.try_approve_completion(&peer, &q_id, &0, &enrollee);
-    assert_eq!(result, Err(Ok(Error::AlreadyApproved)));
+    assert_eq!(result, Err(Ok(MilestoneError::AlreadyApproved)));
 }
 
 #[test]
@@ -1033,7 +1037,7 @@ fn test_approve_nonexistent_submission_fails() {
 
     // Try to approve without submitting first - should fail
     let result = client.try_approve_completion(&peer, &q_id, &0, &enrollee);
-    assert_eq!(result, Err(Ok(Error::NotSubmitted)));
+    assert_eq!(result, Err(Ok(MilestoneError::NotSubmitted)));
 }
 
 #[test]
@@ -1055,7 +1059,7 @@ fn test_approve_already_completed_fails() {
 
     // Try to approve again after completion - should fail
     let result = client.try_approve_completion(&peer, &q_id, &0, &enrollee);
-    assert_eq!(result, Err(Ok(Error::AlreadyCompleted)));
+    assert_eq!(result, Err(Ok(MilestoneError::AlreadyCompleted)));
 }
 
 #[test]
@@ -1069,7 +1073,7 @@ fn test_approve_owner_only_mode_fails() {
 
     // Submission is the gatekeeper in OwnerOnly mode; approval is unreachable
     let result = client.try_submit_for_review(&enrollee, &q_id, &0);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(MilestoneError::Unauthorized)));
 }
 
 #[test]
@@ -1113,7 +1117,7 @@ fn test_create_milestone_empty_title() {
         &100,
         &false,
     );
-    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+    assert_eq!(result, Err(Ok(MilestoneError::InvalidInput)));
 }
 
 #[test]
@@ -1128,7 +1132,7 @@ fn test_create_milestone_empty_description() {
         &100,
         &false,
     );
-    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+    assert_eq!(result, Err(Ok(MilestoneError::InvalidInput)));
 }
 
 #[test]
@@ -1145,7 +1149,7 @@ fn test_create_milestone_very_long_title() {
         &100,
         &false,
     );
-    assert_eq!(result, Err(Ok(Error::TitleTooLong)));
+    assert_eq!(result, Err(Ok(MilestoneError::TitleTooLong)));
 }
 
 #[test]
@@ -1162,7 +1166,7 @@ fn test_create_milestone_very_long_description() {
         &100,
         &false,
     );
-    assert_eq!(result, Err(Ok(Error::DescriptionTooLong)));
+    assert_eq!(result, Err(Ok(MilestoneError::DescriptionTooLong)));
 }
 
 #[test]
@@ -1177,7 +1181,7 @@ fn test_create_milestone_negative_reward() {
         &-1,
         &false,
     );
-    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+    assert_eq!(result, Err(Ok(MilestoneError::InvalidAmount)));
 }
 
 #[test]
@@ -1192,7 +1196,7 @@ fn test_create_milestone_zero_reward() {
         &0,
         &false,
     );
-    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+    assert_eq!(result, Err(Ok(MilestoneError::InvalidAmount)));
 }
 
 #[test]
@@ -1207,7 +1211,7 @@ fn test_create_milestone_reward_too_large() {
         &(MAX_REWARD_AMOUNT + 1),
         &false,
     );
-    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+    assert_eq!(result, Err(Ok(MilestoneError::InvalidAmount)));
 }
 
 #[test]
@@ -1307,7 +1311,7 @@ fn test_create_milestones_batch_oversized_rejection() {
     }
 
     let result = client.try_create_milestones_batch(&owner, &q_id, &milestones);
-    assert_eq!(result, Err(Ok(Error::BatchTooLarge)));
+    assert_eq!(result, Err(Ok(MilestoneError::BatchTooLarge)));
 }
 
 #[test]
@@ -1330,7 +1334,7 @@ fn test_create_milestones_batch_atomic_validation() {
     });
 
     let result = client.try_create_milestones_batch(&owner, &q_id, &milestones);
-    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+    assert_eq!(result, Err(Ok(MilestoneError::InvalidInput)));
 
     // Verify NO milestones were created (atomic)
     let milestones_list = client.get_milestones(&q_id);
@@ -1369,7 +1373,7 @@ fn test_create_milestone_exceeds_max_milestones() {
         &1,
         &false,
     );
-    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+    assert_eq!(result, Err(Ok(MilestoneError::InvalidInput)));
 
     // Count must remain unchanged
     assert_eq!(client.get_milestone_count(&q_id), MAX_MILESTONES);
@@ -1415,7 +1419,7 @@ fn test_create_milestone_at_boundary() {
         &1,
         &false,
     );
-    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+    assert_eq!(result, Err(Ok(MilestoneError::InvalidInput)));
 }
 
 /// Milestone cap is per-quest, filling one quest does not block another.
@@ -1446,7 +1450,7 @@ fn test_milestone_cap_per_quest_independent() {
         &1,
         &false,
     );
-    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+    assert_eq!(result, Err(Ok(MilestoneError::InvalidInput)));
 
     // q2 must still accept milestones
     let id = client.create_milestone(
@@ -1530,7 +1534,7 @@ fn test_create_milestone_0_cannot_require_previous() {
     );
 
     // Should fail with InvalidInput
-    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+    assert_eq!(result, Err(Ok(MilestoneError::InvalidInput)));
 }
 
 #[test]
@@ -1547,7 +1551,7 @@ fn test_create_milestones_batch_0_cannot_require_previous() {
     });
 
     let result = client.try_create_milestones_batch(&owner, &q_id, &batch);
-    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+    assert_eq!(result, Err(Ok(MilestoneError::InvalidInput)));
 }
 
 #[test]
@@ -1567,7 +1571,7 @@ fn test_verify_completion_fails_if_flat_reward_missing() {
     quest_client.add_enrollee(&q_id, &enrollee);
 
     let result = client.try_verify_completion(&owner, &q_id, &0, &enrollee);
-    assert_eq!(result, Err(Ok(Error::FlatRewardNotConfigured)));
+    assert_eq!(result, Err(Ok(MilestoneError::FlatRewardNotConfigured)));
 }
 
 // --- Snapshot distribution mode at submission (issue #863) ---
@@ -1649,7 +1653,7 @@ fn test_competitive_max_winners_one_does_not_double_pay() {
     // A retry for the same enrollee + milestone must NOT bump the cnt or
     // pay again.
     let retry = client.try_verify_completion(&owner, &q_id, &0, &e1);
-    assert_eq!(retry, Err(Ok(Error::AlreadyCompleted)));
+    assert_eq!(retry, Err(Ok(MilestoneError::AlreadyCompleted)));
 }
 
 // --- Paginated quest completion rate (issue #865) ---
@@ -1662,11 +1666,11 @@ fn test_completion_rate_rejects_unbounded_limits() {
 
     // limit == 0 is rejected — callers must opt in to a window.
     let err = client.try_get_quest_completion_rate(&q_id, &0, &0);
-    assert_eq!(err, Err(Ok(Error::InvalidInput)));
+    assert_eq!(err, Err(Ok(MilestoneError::InvalidInput)));
 
     // limit > MAX_COMPLETION_RATE_PAGE (100) is rejected.
     let err = client.try_get_quest_completion_rate(&q_id, &0, &101);
-    assert_eq!(err, Err(Ok(Error::InvalidInput)));
+    assert_eq!(err, Err(Ok(MilestoneError::InvalidInput)));
 }
 
 #[test]
@@ -1749,10 +1753,11 @@ fn test_verify_completion_past_deadline_rejected() {
     quest_client.add_enrollee(&q_id, &enrollee);
 
     // Set deadline in past
+    env.ledger().set_timestamp(1000);
     quest_client.set_deadline(&q_id, &999);
 
     let res = client.try_verify_completion(&owner, &q_id, &ms_id, &enrollee);
-    assert_eq!(res, Err(Ok(Error::DeadlineExpired)));
+    assert_eq!(res, Err(Ok(MilestoneError::DeadlineExpired)));
 }
 
 #[test]
@@ -1768,5 +1773,5 @@ fn test_verify_completion_cancelled_quest_rejected() {
     quest_client.cancel_quest(&q_id);
 
     let res = client.try_verify_completion(&owner, &q_id, &ms_id, &enrollee);
-    assert_eq!(res, Err(Ok(Error::Unauthorized)));
+    assert_eq!(res, Err(Ok(MilestoneError::Unauthorized)));
 }

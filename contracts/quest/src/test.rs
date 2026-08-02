@@ -121,7 +121,7 @@ fn test_create_quest_rejects_past_or_current_deadline() {
             &None,
             &Some(deadline),
         );
-        assert_eq!(result, Err(Ok(Error::InvalidInput)));
+        assert_eq!(result, Err(Ok(QuestErrorEnum::InvalidInput)));
     }
 }
 
@@ -157,7 +157,7 @@ fn test_create_quest_empty_name_fails() {
         &None,
         &None,
     );
-    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::InvalidInput)));
 }
 
 #[test]
@@ -174,7 +174,7 @@ fn test_create_quest_whitespace_name_fails() {
         &None,
         &None,
     );
-    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::InvalidInput)));
 }
 
 #[test]
@@ -191,7 +191,7 @@ fn test_create_quest_empty_description_fails() {
         &None,
         &None,
     );
-    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::InvalidInput)));
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn test_create_quest_oversized_name_fails() {
         &None,
         &None,
     );
-    assert_eq!(result, Err(Ok(Error::NameTooLong)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::NameTooLong)));
 }
 
 #[test]
@@ -229,7 +229,7 @@ fn test_create_quest_oversized_description_fails() {
         &None,
         &None,
     );
-    assert_eq!(result, Err(Ok(Error::DescriptionTooLong)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::DescriptionTooLong)));
 }
 
 #[test]
@@ -274,7 +274,7 @@ fn test_add_enrollee_duplicate() {
     let enrollee = Address::generate(&env);
     client.add_enrollee(&0, &enrollee);
     let result = client.try_add_enrollee(&0, &enrollee);
-    assert_eq!(result, Err(Ok(Error::AlreadyEnrolled)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::AlreadyEnrolled)));
 }
 
 #[test]
@@ -298,7 +298,7 @@ fn test_join_private_quest_rejected() {
 
     let learner = Address::generate(&env);
     let result = client.try_join_quest(&learner, &0);
-    assert_eq!(result, Err(Ok(Error::InviteOnly)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::InviteOnly)));
 }
 
 #[test]
@@ -309,7 +309,7 @@ fn test_join_archived_quest_rejected() {
 
     let learner = Address::generate(&env);
     let result = client.try_join_quest(&learner, &0);
-    assert_eq!(result, Err(Ok(Error::EnrollmentClosed)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::EnrollmentClosed)));
 }
 
 #[test]
@@ -333,14 +333,14 @@ fn test_remove_enrollee_not_found() {
     create_quest_helper(&env, &client, &owner, &token);
     let random = Address::generate(&env);
     let result = client.try_remove_enrollee(&0, &random);
-    assert_eq!(result, Err(Ok(Error::NotEnrolled)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::NotEnrolled)));
 }
 
 #[test]
 fn test_quest_not_found() {
     let (_env, client, _owner, _token) = setup();
     let result = client.try_get_quest(&999);
-    assert_eq!(result, Err(Ok(Error::NotFound)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::NotFound)));
 }
 
 #[test]
@@ -348,7 +348,7 @@ fn test_add_enrollee_quest_not_found() {
     let (env, client, _owner, _token) = setup();
     let enrollee = Address::generate(&env);
     let result = client.try_add_enrollee(&999, &enrollee);
-    assert_eq!(result, Err(Ok(Error::NotFound)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::NotFound)));
 }
 
 #[test]
@@ -423,7 +423,7 @@ fn test_create_quest_rejects_too_many_tags() {
         &None,
         &None,
     );
-    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::InvalidInput)));
 }
 
 #[test]
@@ -446,7 +446,7 @@ fn test_create_quest_rejects_tag_too_long() {
         &None,
         &None,
     );
-    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::InvalidInput)));
 }
 
 #[test]
@@ -772,7 +772,7 @@ fn test_add_enrollee_non_existent_quest() {
     let (env, client, _owner, _token) = setup();
     let enrollee = Address::generate(&env);
     let result = client.try_add_enrollee(&999, &enrollee);
-    assert_eq!(result, Err(Ok(Error::NotFound)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::NotFound)));
 }
 
 #[test]
@@ -780,14 +780,14 @@ fn test_remove_enrollee_non_existent_quest() {
     let (env, client, _owner, _token) = setup();
     let enrollee = Address::generate(&env);
     let result = client.try_remove_enrollee(&999, &enrollee);
-    assert_eq!(result, Err(Ok(Error::NotFound)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::NotFound)));
 }
 
 #[test]
 fn test_set_visibility_non_existent_quest() {
     let (_env, client, _owner, _token) = setup();
     let result = client.try_set_visibility(&999, &Visibility::Private);
-    assert_eq!(result, Err(Ok(Error::NotFound)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::NotFound)));
 }
 
 #[test]
@@ -845,7 +845,7 @@ fn test_leave_quest_not_enrolled() {
 
     let random = Address::generate(&env);
     let result = client.try_leave_quest(&random, &0);
-    assert_eq!(result, Err(Ok(Error::NotEnrolled)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::NotEnrolled)));
 }
 
 // --- Leave-quest peer-review hold (issue #862) ---
@@ -862,7 +862,10 @@ fn test_leave_quest_blocked_while_hold_in_place() {
     assert!(client.has_leave_hold(&0, &enrollee));
 
     let result = client.try_leave_quest(&enrollee, &0);
-    assert_eq!(result, Err(Ok(Error::LeaveBlockedByPendingApproval)));
+    assert_eq!(
+        result,
+        Err(Ok(QuestErrorEnum::LeaveBlockedByPendingApproval))
+    );
 
     assert!(client.is_enrollee(&0, &enrollee));
 }
@@ -893,7 +896,7 @@ fn test_place_leave_hold_rejects_non_owner() {
 
     let stranger = Address::generate(&env);
     let result = client.try_place_leave_hold(&0, &stranger, &enrollee);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::Unauthorized)));
 }
 
 #[test]
@@ -903,7 +906,7 @@ fn test_place_leave_hold_rejects_non_enrollee() {
 
     let stranger = Address::generate(&env);
     let result = client.try_place_leave_hold(&0, &owner, &stranger);
-    assert_eq!(result, Err(Ok(Error::NotEnrolled)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::NotEnrolled)));
 }
 
 // --- QuestStatus / Update / Archive Tests (PR #296) ---
@@ -980,7 +983,7 @@ fn test_update_quest_rejects_too_many_tags() {
         &Some(Visibility::Public),
         &None,
     );
-    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::InvalidInput)));
 }
 
 #[test]
@@ -996,7 +999,7 @@ fn test_update_quest_not_found() {
         &Some(Visibility::Public),
         &None,
     );
-    assert_eq!(result, Err(Ok(Error::NotFound)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::NotFound)));
 }
 
 #[test]
@@ -1016,7 +1019,7 @@ fn test_archive_quest() {
 fn test_archive_quest_not_found() {
     let (_env, client, _owner, _token) = setup();
     let result = client.try_archive_quest(&999);
-    assert_eq!(result, Err(Ok(Error::NotFound)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::NotFound)));
 }
 
 #[test]
@@ -1026,7 +1029,7 @@ fn test_archived_quest_rejects_new_enrollment() {
     client.archive_quest(&0);
     let enrollee = Address::generate(&env);
     let result = client.try_add_enrollee(&0, &enrollee);
-    assert_eq!(result, Err(Ok(Error::EnrollmentClosed)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::EnrollmentClosed)));
 }
 
 #[test]
@@ -1059,7 +1062,7 @@ fn test_archived_quest_rejects_update() {
         &Some(Visibility::Public),
         &None,
     );
-    assert_eq!(result, Err(Ok(Error::QuestArchived)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::QuestArchived)));
 }
 
 #[test]
@@ -1070,7 +1073,7 @@ fn test_archive_quest_twice_rejected() {
     let archived_at = client.get_quest(&0).archived_at;
 
     let result = client.try_archive_quest(&0);
-    assert_eq!(result, Err(Ok(Error::QuestArchived)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::QuestArchived)));
 
     // Re-archiving must not mutate the original archived_at timestamp.
     let quest = client.get_quest(&0);
@@ -1145,7 +1148,7 @@ fn test_revoke_creator_verification_unauthorized() {
     client.verify_creator(&admin, &creator);
 
     let result = client.try_revoke_creator_verification(&attacker, &creator);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::Unauthorized)));
 
     // Still verified
     assert!(client.is_creator_verified(&creator));
@@ -1162,7 +1165,7 @@ fn test_revoke_creator_verification_when_paused() {
     client.pause(&admin);
 
     let result = client.try_revoke_creator_verification(&admin, &creator);
-    assert_eq!(result, Err(Ok(Error::Paused)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::Paused)));
 
     // Verification unchanged
     assert!(client.is_creator_verified(&creator));
@@ -1207,7 +1210,7 @@ fn test_pause_blocks_state_changes_until_unpaused() {
         &None,
         &None,
     );
-    assert_eq!(create_result, Err(Ok(Error::Paused)));
+    assert_eq!(create_result, Err(Ok(QuestErrorEnum::Paused)));
 
     client.unpause(&admin);
     let quest_id = create_quest_helper(&env, &client, &owner, &token);
@@ -1215,7 +1218,7 @@ fn test_pause_blocks_state_changes_until_unpaused() {
 
     let enrollee = Address::generate(&env);
     let add_result = client.try_add_enrollee(&quest_id, &enrollee);
-    assert_eq!(add_result, Err(Ok(Error::Paused)));
+    assert_eq!(add_result, Err(Ok(QuestErrorEnum::Paused)));
 
     client.unpause(&admin);
     assert!(!client.is_paused());
@@ -1249,44 +1252,47 @@ fn test_pause_blocks_all_write_endpoints_until_unpaused() {
             &Some(Visibility::Private),
             &Some(10),
         ),
-        Err(Ok(Error::Paused))
+        Err(Ok(QuestErrorEnum::Paused))
     );
-    assert_eq!(client.try_archive_quest(&quest_id), Err(Ok(Error::Paused)));
+    assert_eq!(
+        client.try_archive_quest(&quest_id),
+        Err(Ok(QuestErrorEnum::Paused))
+    );
     assert_eq!(
         client.try_add_enrollee(&quest_id, &random_enrollee),
-        Err(Ok(Error::Paused))
+        Err(Ok(QuestErrorEnum::Paused))
     );
     assert_eq!(
         client.try_join_quest(&random_enrollee, &quest_id),
-        Err(Ok(Error::Paused))
+        Err(Ok(QuestErrorEnum::Paused))
     );
     assert_eq!(
         client.try_register_invite(&owner, &quest_id, &commitment),
-        Err(Ok(Error::Paused))
+        Err(Ok(QuestErrorEnum::Paused))
     );
     assert_eq!(
         client.try_revoke_invite(&owner, &quest_id, &commitment),
-        Err(Ok(Error::Paused))
+        Err(Ok(QuestErrorEnum::Paused))
     );
     assert_eq!(
         client.try_join_quest_with_invite(&random_enrollee, &quest_id, &preimage),
-        Err(Ok(Error::Paused))
+        Err(Ok(QuestErrorEnum::Paused))
     );
     assert_eq!(
         client.try_remove_enrollee(&quest_id, &enrollee),
-        Err(Ok(Error::Paused))
+        Err(Ok(QuestErrorEnum::Paused))
     );
     assert_eq!(
         client.try_leave_quest(&enrollee, &quest_id),
-        Err(Ok(Error::Paused))
+        Err(Ok(QuestErrorEnum::Paused))
     );
     assert_eq!(
         client.try_set_deadline(&quest_id, &123456),
-        Err(Ok(Error::Paused))
+        Err(Ok(QuestErrorEnum::Paused))
     );
     assert_eq!(
         client.try_set_visibility(&quest_id, &Visibility::Private),
-        Err(Ok(Error::Paused))
+        Err(Ok(QuestErrorEnum::Paused))
     );
 }
 
@@ -1319,7 +1325,7 @@ fn test_update_quest_empty_name_fails() {
         &Some(Visibility::Public),
         &None,
     );
-    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::InvalidInput)));
 }
 
 #[test]
@@ -1338,7 +1344,7 @@ fn test_update_quest_oversized_name_fails() {
         &Some(Visibility::Public),
         &None,
     );
-    assert_eq!(result, Err(Ok(Error::NameTooLong)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::NameTooLong)));
 }
 
 #[test]
@@ -1355,7 +1361,7 @@ fn test_update_quest_empty_description_fails() {
         &Some(Visibility::Public),
         &None,
     );
-    assert_eq!(result, Err(Ok(Error::InvalidInput)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::InvalidInput)));
 }
 
 #[test]
@@ -1374,7 +1380,7 @@ fn test_update_quest_oversized_description_fails() {
         &Some(Visibility::Public),
         &None,
     );
-    assert_eq!(result, Err(Ok(Error::DescriptionTooLong)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::DescriptionTooLong)));
 }
 
 #[test]
@@ -1418,7 +1424,7 @@ fn test_update_quest_unauthorized() {
         &None,
         &None,
     );
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::Unauthorized)));
 }
 
 #[test]
@@ -1471,7 +1477,7 @@ fn test_enrollee_cap() {
     client.add_enrollee(&id, &e2);
     let result = client.try_add_enrollee(&id, &e3);
 
-    assert_eq!(result, Err(Ok(Error::QuestFull)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::QuestFull)));
 }
 
 #[test]
@@ -1486,7 +1492,7 @@ fn test_initialize_admin() {
 
     // Try to initialize again should fail
     let result = client.try_initialize(&admin);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::Unauthorized)));
 }
 
 #[test]
@@ -1515,7 +1521,7 @@ fn test_migrate_quest_data_validates_entire_batch_before_writing() {
     ids.push_back(99);
     let result = client.try_migrate_quest_data(&admin, &ids, &1);
 
-    assert_eq!(result, Err(Ok(Error::NotFound)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::NotFound)));
     let version_key = DataKey::QuestSchemaVersion(0);
     let migrated = env.as_contract(&client.address, || {
         env.storage().persistent().has(&version_key)
@@ -1543,7 +1549,7 @@ fn test_transfer_admin() {
 
     // Old admin should not be able to unpause
     let result = client.try_unpause(&admin);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::Unauthorized)));
 
     // New admin should be able to unpause
     client.unpause(&new_admin);
@@ -1564,7 +1570,7 @@ fn test_transfer_admin_unauthorized() {
 
     // Hacker tries to transfer admin
     let result = client.try_transfer_admin(&hacker, &new_admin);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::Unauthorized)));
 }
 
 // --- EnrollmentClosed / DeadlineExpired tests ---
@@ -1577,7 +1583,7 @@ fn test_join_quest_archived_returns_enrollment_closed() {
 
     let learner = Address::generate(&env);
     let result = client.try_join_quest(&learner, &0);
-    assert_eq!(result, Err(Ok(Error::EnrollmentClosed)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::EnrollmentClosed)));
 }
 
 #[test]
@@ -1588,7 +1594,7 @@ fn test_add_enrollee_archived_returns_enrollment_closed() {
 
     let enrollee = Address::generate(&env);
     let result = client.try_add_enrollee(&0, &enrollee);
-    assert_eq!(result, Err(Ok(Error::EnrollmentClosed)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::EnrollmentClosed)));
 }
 
 #[test]
@@ -1602,7 +1608,7 @@ fn test_join_quest_past_deadline_returns_deadline_expired() {
 
     let learner = Address::generate(&env);
     let result = client.try_join_quest(&learner, &0);
-    assert_eq!(result, Err(Ok(Error::DeadlineExpired)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::DeadlineExpired)));
 }
 
 #[test]
@@ -1615,7 +1621,7 @@ fn test_add_enrollee_past_deadline_returns_deadline_expired() {
 
     let enrollee = Address::generate(&env);
     let result = client.try_add_enrollee(&0, &enrollee);
-    assert_eq!(result, Err(Ok(Error::DeadlineExpired)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::DeadlineExpired)));
 }
 
 #[test]
@@ -1644,9 +1650,12 @@ fn test_join_quest_future_deadline_succeeds() {
 #[test]
 fn test_enrollment_closed_is_distinct_from_quest_archived() {
     // EnrollmentClosed (13) != QuestArchived (8) — different codes for different consumers
-    assert_ne!(Error::EnrollmentClosed as u32, Error::QuestArchived as u32);
-    assert_eq!(Error::EnrollmentClosed as u32, 13);
-    assert_eq!(Error::DeadlineExpired as u32, 14);
+    assert_ne!(
+        QuestErrorEnum::EnrollmentClosed as u32,
+        QuestErrorEnum::QuestArchived as u32
+    );
+    assert_eq!(QuestErrorEnum::EnrollmentClosed as u32, 13);
+    assert_eq!(QuestErrorEnum::DeadlineExpired as u32, 14);
 }
 
 // ---------------------------------------------------------------------------
@@ -1707,7 +1716,7 @@ fn test_invite_replay_rejected() {
     let learner2 = Address::generate(&env);
     let result =
         client.try_join_quest_with_invite(&learner2, &quest_id, &Bytes::from_slice(&env, preimage));
-    assert_eq!(result, Err(Ok(Error::InviteAlreadyUsed)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::InviteAlreadyUsed)));
     assert!(!client.is_enrollee(&quest_id, &learner2));
 }
 
@@ -1726,7 +1735,7 @@ fn test_invite_wrong_preimage_rejected() {
         &quest_id,
         &Bytes::from_slice(&env, b"wrong-secret"),
     );
-    assert_eq!(result, Err(Ok(Error::InvalidInvite)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::InvalidInvite)));
     assert!(!client.is_enrollee(&quest_id, &learner));
 }
 
@@ -1742,7 +1751,7 @@ fn test_invite_unregistered_commitment_rejected() {
         &quest_id,
         &Bytes::from_slice(&env, b"any-preimage"),
     );
-    assert_eq!(result, Err(Ok(Error::InvalidInvite)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::InvalidInvite)));
 }
 
 #[test]
@@ -1787,7 +1796,7 @@ fn test_invite_on_archived_quest_rejected() {
     let learner = Address::generate(&env);
     let result =
         client.try_join_quest_with_invite(&learner, &quest_id, &Bytes::from_slice(&env, preimage));
-    assert_eq!(result, Err(Ok(Error::EnrollmentClosed)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::EnrollmentClosed)));
 }
 
 #[test]
@@ -1805,7 +1814,7 @@ fn test_invite_past_deadline_rejected() {
     let learner = Address::generate(&env);
     let result =
         client.try_join_quest_with_invite(&learner, &quest_id, &Bytes::from_slice(&env, preimage));
-    assert_eq!(result, Err(Ok(Error::DeadlineExpired)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::DeadlineExpired)));
 }
 
 #[test]
@@ -1838,7 +1847,7 @@ fn test_invite_respects_enrollment_cap() {
     let bob = Address::generate(&env);
     let result =
         client.try_join_quest_with_invite(&bob, &quest_id, &Bytes::from_slice(&env, preimage_b));
-    assert_eq!(result, Err(Ok(Error::QuestFull)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::QuestFull)));
     assert!(!client.is_enrollee(&quest_id, &bob));
 }
 
@@ -1865,7 +1874,7 @@ fn test_invite_already_enrolled_rejected() {
         &quest_id,
         &Bytes::from_slice(&env, preimage_b),
     );
-    assert_eq!(result, Err(Ok(Error::AlreadyEnrolled)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::AlreadyEnrolled)));
 }
 
 #[test]
@@ -1876,7 +1885,7 @@ fn test_register_invite_non_owner_rejected() {
     let commitment = sha256_commitment(&env, b"secret");
     let impostor = Address::generate(&env);
     let result = client.try_register_invite(&impostor, &quest_id, &commitment);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::Unauthorized)));
 }
 
 #[test]
@@ -1887,7 +1896,7 @@ fn test_register_invite_archived_quest_rejected() {
 
     let commitment = sha256_commitment(&env, b"secret");
     let result = client.try_register_invite(&owner, &quest_id, &commitment);
-    assert_eq!(result, Err(Ok(Error::EnrollmentClosed)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::EnrollmentClosed)));
 }
 
 #[test]
@@ -1907,7 +1916,7 @@ fn test_revoke_invite_prevents_redemption() {
     let learner = Address::generate(&env);
     let result =
         client.try_join_quest_with_invite(&learner, &quest_id, &Bytes::from_slice(&env, preimage));
-    assert_eq!(result, Err(Ok(Error::InvalidInvite)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::InvalidInvite)));
 }
 
 #[test]
@@ -1920,7 +1929,7 @@ fn test_revoke_invite_non_owner_rejected() {
 
     let impostor = Address::generate(&env);
     let result = client.try_revoke_invite(&impostor, &quest_id, &commitment);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(QuestErrorEnum::Unauthorized)));
 }
 
 #[test]
@@ -1940,10 +1949,16 @@ fn test_invite_works_on_public_quest() {
 
 #[test]
 fn test_invite_error_codes_are_distinct() {
-    assert_eq!(Error::InvalidInvite as u32, 15);
-    assert_eq!(Error::InviteAlreadyUsed as u32, 16);
-    assert_ne!(Error::InvalidInvite as u32, Error::InviteAlreadyUsed as u32);
-    assert_ne!(Error::InvalidInvite as u32, Error::InviteOnly as u32);
+    assert_eq!(QuestErrorEnum::InvalidInvite as u32, 15);
+    assert_eq!(QuestErrorEnum::InviteAlreadyUsed as u32, 16);
+    assert_ne!(
+        QuestErrorEnum::InvalidInvite as u32,
+        QuestErrorEnum::InviteAlreadyUsed as u32
+    );
+    assert_ne!(
+        QuestErrorEnum::InvalidInvite as u32,
+        QuestErrorEnum::InviteOnly as u32
+    );
 }
 
 #[test]
@@ -1962,7 +1977,7 @@ fn test_cancel_quest_flow() {
     // Cancelled quest rejects updates and new enrollments
     let learner = Address::generate(&env);
     let join_res = client.try_join_quest(&learner, &quest_id);
-    assert_eq!(join_res, Err(Ok(Error::EnrollmentClosed)));
+    assert_eq!(join_res, Err(Ok(QuestErrorEnum::EnrollmentClosed)));
 
     let update_res = client.try_update_quest(
         &quest_id,
@@ -1974,7 +1989,7 @@ fn test_cancel_quest_flow() {
         &None,
         &None,
     );
-    assert_eq!(update_res, Err(Ok(Error::QuestCancelled)));
+    assert_eq!(update_res, Err(Ok(QuestErrorEnum::QuestCancelled)));
 }
 
 #[test]
@@ -2006,7 +2021,7 @@ fn test_signature_and_preimage_validation_rejects_forgery() {
         &quest_id,
         &Bytes::from_slice(&env, forged_preimage),
     );
-    assert_eq!(forged_res, Err(Ok(Error::InvalidInvite)));
+    assert_eq!(forged_res, Err(Ok(QuestErrorEnum::InvalidInvite)));
     assert!(!client.is_enrollee(&quest_id, &attacker));
 
     // Legitimate user uses correct preimage signature bytes
@@ -2021,11 +2036,13 @@ fn test_signature_and_preimage_validation_rejects_forgery() {
 
 #[test]
 fn test_get_participants_filters_suspended_users() {
-    let (env, client, admin) = setup_test();
+    let (env, client, admin, _token) = setup();
+    client.initialize(&admin);
+    
     let owner = Address::generate(&env);
     let token = Address::generate(&env);
 
-    let quest_id = create_test_quest(&env, &client, &owner, &token);
+    let quest_id = create_quest_helper(&env, &client, &owner, &token);
 
     let user1 = Address::generate(&env);
     let user2 = Address::generate(&env);

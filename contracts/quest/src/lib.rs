@@ -1,7 +1,7 @@
 #![no_std]
 use common::{
     extend_instance_ttl, is_contract_address, QuestInfo, QuestStatus, QuestVersion, UserStatus,
-    Visibility, BUMP, THRESHOLD,
+    Visibility, BUMP, MAX_QUEST_DESCRIPTION_LEN, THRESHOLD,
 };
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, Address, Bytes, BytesN, Env, String,
@@ -53,13 +53,13 @@ pub enum DataKey {
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
-pub enum Error {
+pub enum QuestErrorEnum {
     /// Entity not found (shared code 1).
-    NotFound = common::ERR_NOT_FOUND as u32,
+    NotFound = 1,
     /// Caller is not authorized (shared code 2).
-    Unauthorized = common::ERR_UNAUTHORIZED as u32,
+    Unauthorized = 2,
     /// Invalid input provided (shared code 3).
-    InvalidInput = common::ERR_INVALID_INPUT as u32,
+    InvalidInput = 3,
     AlreadyEnrolled = 4,
     Reserved5 = 5, // reserved for stable ABI; do not reuse
     NotEnrolled = 6,
@@ -84,7 +84,7 @@ pub enum Error {
     QuestCancelled = 17,
     /// Contract is administratively paused; all mutating calls are rejected.
     /// System band: code 400 is identical across all Lernza contracts.
-    Paused = common::ERR_PAUSED as u32,
+    Paused = 400,
 }
 
 // TTL constants and address validation moved to common.
@@ -116,23 +116,23 @@ fn is_blank_ascii(s: &String) -> bool {
 // is_contract_address moved to common.
 
 /// Validate name: not blank, not too long.
-fn validate_name(name: &String) -> Result<(), Error> {
+fn validate_name(name: &String) -> Result<(), QuestErrorEnum> {
     if is_blank_ascii(name) {
-        return Err(Error::InvalidInput);
+        return Err(QuestErrorEnum::InvalidInput);
     }
     if name.len() > common::MAX_QUEST_NAME_LEN {
-        return Err(Error::NameTooLong);
+        return Err(QuestErrorEnum::NameTooLong);
     }
     Ok(())
 }
 
 /// Validate description: not blank, not too long.
-fn validate_description(description: &String) -> Result<(), Error> {
+fn validate_description(description: &String) -> Result<(), QuestErrorEnum> {
     if is_blank_ascii(description) {
-        return Err(Error::InvalidInput);
+        return Err(QuestErrorEnum::InvalidInput);
     }
     if description.len() > common::MAX_QUEST_DESCRIPTION_LEN {
-        return Err(Error::DescriptionTooLong);
+        return Err(QuestErrorEnum::DescriptionTooLong);
     }
     Ok(())
 }
@@ -143,13 +143,14 @@ impl common::IsDataKey for DataKey {}
 #[contract]
 pub struct QuestContract;
 
+#[allow(clippy::too_many_arguments)]
 #[contractimpl]
 impl QuestContract {
     /// Initialize the quest contract with an admin.
-    pub fn initialize(env: Env, admin: Address) -> Result<(), Error> {
+    pub fn initialize(env: Env, admin: Address) -> Result<(), QuestErrorEnum> {
         admin.require_auth();
         if env.storage().instance().has(&DataKey::Admin) {
-            return Err(Error::Unauthorized);
+            return Err(QuestErrorEnum::Unauthorized);
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Paused, &false);
@@ -158,15 +159,19 @@ impl QuestContract {
     }
 
     /// Returns the address that holds the contract-administrator role.
-    pub fn get_admin(env: Env) -> Result<Address, Error> {
+    pub fn get_admin(env: Env) -> Result<Address, QuestErrorEnum> {
         env.storage()
             .instance()
             .get(&DataKey::Admin)
-            .ok_or(Error::NotFound)
+            .ok_or(QuestErrorEnum::NotFound)
     }
 
     /// Upgrade this contract's WASM. Only the stored administrator can invoke it.
-    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) -> Result<(), Error> {
+    pub fn upgrade(
+        env: Env,
+        admin: Address,
+        new_wasm_hash: BytesN<32>,
+    ) -> Result<(), QuestErrorEnum> {
         Self::require_admin(&env, &admin)?;
         env.deployer().update_current_contract_wasm(new_wasm_hash);
         Ok(())
@@ -182,14 +187,14 @@ impl QuestContract {
         admin: Address,
         quest_ids: Vec<u32>,
         target_schema_version: u32,
-    ) -> Result<(), Error> {
+    ) -> Result<(), QuestErrorEnum> {
         Self::require_admin(&env, &admin)?;
         Self::require_not_paused(&env)?;
-        if quest_ids.len() == 0
+        if quest_ids.is_empty()
             || quest_ids.len() > MAX_MIGRATION_BATCH
             || target_schema_version != QUEST_DATA_SCHEMA_VERSION
         {
-            return Err(Error::InvalidInput);
+            return Err(QuestErrorEnum::InvalidInput);
         }
 
         // Validate all IDs before writing so an invalid batch has no effects.
@@ -216,7 +221,7 @@ impl QuestContract {
     }
 
     /// Returns the recorded schema version; legacy quests are version 1.
-    pub fn get_quest_schema_version(env: Env, quest_id: u32) -> Result<u32, Error> {
+    pub fn get_quest_schema_version(env: Env, quest_id: u32) -> Result<u32, QuestErrorEnum> {
         Self::load_quest(&env, quest_id)?;
         Ok(env
             .storage()
@@ -226,7 +231,11 @@ impl QuestContract {
     }
 
     /// Verify a creator address. Admin only.
-    pub fn verify_creator(env: Env, admin: Address, creator: Address) -> Result<(), Error> {
+    pub fn verify_creator(
+        env: Env,
+        admin: Address,
+        creator: Address,
+    ) -> Result<(), QuestErrorEnum> {
         Self::require_admin(&env, &admin)?;
         Self::require_not_paused(&env)?;
 
@@ -265,7 +274,7 @@ impl QuestContract {
         env: Env,
         admin: Address,
         addr: Address,
-    ) -> Result<(), Error> {
+    ) -> Result<(), QuestErrorEnum> {
         Self::require_admin(&env, &admin)?;
         Self::require_not_paused(&env)?;
 
@@ -288,7 +297,7 @@ impl QuestContract {
     }
 
     /// Pause state-mutating operations. Admin only.
-    pub fn pause(env: Env, admin: Address) -> Result<(), Error> {
+    pub fn pause(env: Env, admin: Address) -> Result<(), QuestErrorEnum> {
         Self::require_admin(&env, &admin)?;
         env.storage().instance().set(&DataKey::Paused, &true);
         extend_instance_ttl(&env);
@@ -296,7 +305,7 @@ impl QuestContract {
     }
 
     /// Resume state-mutating operations. Admin only.
-    pub fn unpause(env: Env, admin: Address) -> Result<(), Error> {
+    pub fn unpause(env: Env, admin: Address) -> Result<(), QuestErrorEnum> {
         Self::require_admin(&env, &admin)?;
         env.storage().instance().set(&DataKey::Paused, &false);
         extend_instance_ttl(&env);
@@ -308,7 +317,7 @@ impl QuestContract {
         env: Env,
         current_admin: Address,
         new_admin: Address,
-    ) -> Result<(), Error> {
+    ) -> Result<(), QuestErrorEnum> {
         Self::require_admin(&env, &current_admin)?;
         Self::require_not_paused(&env)?;
 
@@ -348,7 +357,7 @@ impl QuestContract {
         visibility: Visibility,
         max_enrollees: Option<u32>,
         deadline: Option<u64>,
-    ) -> Result<u32, Error> {
+    ) -> Result<u32, QuestErrorEnum> {
         owner.require_auth();
         Self::require_not_paused(&env)?;
 
@@ -357,13 +366,13 @@ impl QuestContract {
         validate_description(&description)?;
 
         if !is_contract_address(&token_addr) {
-            return Err(Error::InvalidInput);
+            return Err(QuestErrorEnum::InvalidInput);
         }
         Self::validate_tags(&tags)?;
 
         let deadline = deadline.unwrap_or(0);
         if deadline != 0 && deadline <= env.ledger().timestamp() {
-            return Err(Error::InvalidInput);
+            return Err(QuestErrorEnum::InvalidInput);
         }
 
         let id: u32 = env.storage().instance().get(&DataKey::NextId).unwrap_or(0);
@@ -418,6 +427,11 @@ impl QuestContract {
         // Emit quest creation event via shared helper for consistent schema
         common::emit_quest_created(&env, id, &quest.owner.clone(), &quest.name.clone());
 
+        // Initialize empty version history to prevent MissingValue panic on TTL extend
+        env.storage()
+            .persistent()
+            .set(&DataKey::QuestVersionHistory(id), &Vec::<QuestVersion>::new(&env));
+
         Self::bump(&env, id);
         Ok(id)
     }
@@ -434,20 +448,20 @@ impl QuestContract {
         tags: Option<Vec<String>>,
         visibility: Option<Visibility>,
         max_enrollees: Option<u32>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), QuestErrorEnum> {
         owner.require_auth();
         Self::require_not_paused(&env)?;
         let mut quest = Self::load_quest(&env, quest_id)?;
 
         if quest.owner != owner {
-            return Err(Error::Unauthorized);
+            return Err(QuestErrorEnum::Unauthorized);
         }
 
         if quest.status == QuestStatus::Archived {
-            return Err(Error::QuestArchived);
+            return Err(QuestErrorEnum::QuestArchived);
         }
         if quest.status == QuestStatus::Cancelled {
-            return Err(Error::QuestCancelled);
+            return Err(QuestErrorEnum::QuestCancelled);
         }
 
         // Input validation & update
@@ -463,7 +477,7 @@ impl QuestContract {
 
         if let Some(c) = category.clone() {
             if is_blank_ascii(&c) {
-                return Err(Error::InvalidInput);
+                return Err(QuestErrorEnum::InvalidInput);
             }
             let old_category = quest.category.clone();
             quest.category = c;
@@ -546,16 +560,16 @@ impl QuestContract {
     }
 
     /// Archive a quest. Owner only. Archived quests do not accept new enrollments.
-    pub fn archive_quest(env: Env, quest_id: u32) -> Result<(), Error> {
+    pub fn archive_quest(env: Env, quest_id: u32) -> Result<(), QuestErrorEnum> {
         Self::require_not_paused(&env)?;
         let mut quest = Self::load_quest(&env, quest_id)?;
         quest.owner.require_auth();
 
         if quest.status == QuestStatus::Archived {
-            return Err(Error::QuestArchived);
+            return Err(QuestErrorEnum::QuestArchived);
         }
         if quest.status == QuestStatus::Cancelled {
-            return Err(Error::QuestCancelled);
+            return Err(QuestErrorEnum::QuestCancelled);
         }
 
         quest.status = QuestStatus::Archived;
@@ -578,16 +592,16 @@ impl QuestContract {
     /// Cancel an active quest. Owner only.
     /// Cancelling a quest prevents any further updates, enrollments, or milestone verifications.
     /// Cleans up state by removing the quest from public discovery indices.
-    pub fn cancel_quest(env: Env, quest_id: u32) -> Result<(), Error> {
+    pub fn cancel_quest(env: Env, quest_id: u32) -> Result<(), QuestErrorEnum> {
         Self::require_not_paused(&env)?;
         let mut quest = Self::load_quest(&env, quest_id)?;
         quest.owner.require_auth();
 
         if quest.status == QuestStatus::Cancelled {
-            return Err(Error::QuestCancelled);
+            return Err(QuestErrorEnum::QuestCancelled);
         }
         if quest.status == QuestStatus::Archived {
-            return Err(Error::QuestArchived);
+            return Err(QuestErrorEnum::QuestArchived);
         }
 
         quest.status = QuestStatus::Cancelled;
@@ -626,16 +640,16 @@ impl QuestContract {
     }
 
     /// Add an enrollee to a quest. Owner only.
-    pub fn add_enrollee(env: Env, quest_id: u32, enrollee: Address) -> Result<(), Error> {
+    pub fn add_enrollee(env: Env, quest_id: u32, enrollee: Address) -> Result<(), QuestErrorEnum> {
         Self::require_not_paused(&env)?;
         let quest = Self::load_quest(&env, quest_id)?;
         quest.owner.require_auth();
 
         if quest.status == QuestStatus::Archived || quest.status == QuestStatus::Cancelled {
-            return Err(Error::EnrollmentClosed);
+            return Err(QuestErrorEnum::EnrollmentClosed);
         }
         if quest.deadline > 0 && env.ledger().timestamp() > quest.deadline {
-            return Err(Error::DeadlineExpired);
+            return Err(QuestErrorEnum::DeadlineExpired);
         }
 
         let enrollees = Self::load_enrollees(&env, quest_id);
@@ -643,13 +657,13 @@ impl QuestContract {
         // Check enrollment cap from quest record
         if let Some(max) = quest.max_enrollees {
             if enrollees.len() >= max {
-                return Err(Error::QuestFull);
+                return Err(QuestErrorEnum::QuestFull);
             }
         }
 
         // Check not already enrolled
         if enrollees.contains(&enrollee) {
-            return Err(Error::AlreadyEnrolled);
+            return Err(QuestErrorEnum::AlreadyEnrolled);
         }
 
         let mut new_enrollees = enrollees;
@@ -680,31 +694,31 @@ impl QuestContract {
     }
 
     /// Allow a learner to enroll themselves in a public quest.
-    pub fn join_quest(env: Env, enrollee: Address, quest_id: u32) -> Result<(), Error> {
+    pub fn join_quest(env: Env, enrollee: Address, quest_id: u32) -> Result<(), QuestErrorEnum> {
         enrollee.require_auth();
         Self::require_not_paused(&env)?;
 
         let quest = Self::load_quest(&env, quest_id)?;
         if quest.status == QuestStatus::Archived || quest.status == QuestStatus::Cancelled {
-            return Err(Error::EnrollmentClosed);
+            return Err(QuestErrorEnum::EnrollmentClosed);
         }
         if quest.deadline > 0 && env.ledger().timestamp() > quest.deadline {
-            return Err(Error::DeadlineExpired);
+            return Err(QuestErrorEnum::DeadlineExpired);
         }
         if quest.visibility == Visibility::Private {
-            return Err(Error::InviteOnly);
+            return Err(QuestErrorEnum::InviteOnly);
         }
 
         let enrollees = Self::load_enrollees(&env, quest_id);
 
         if let Some(max) = quest.max_enrollees {
             if enrollees.len() >= max {
-                return Err(Error::QuestFull);
+                return Err(QuestErrorEnum::QuestFull);
             }
         }
 
         if enrollees.contains(&enrollee) {
-            return Err(Error::AlreadyEnrolled);
+            return Err(QuestErrorEnum::AlreadyEnrolled);
         }
 
         let mut new_enrollees = enrollees;
@@ -749,15 +763,15 @@ impl QuestContract {
         owner: Address,
         quest_id: u32,
         commitment: BytesN<32>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), QuestErrorEnum> {
         owner.require_auth();
         Self::require_not_paused(&env)?;
         let quest = Self::load_quest(&env, quest_id)?;
         if quest.owner != owner {
-            return Err(Error::Unauthorized);
+            return Err(QuestErrorEnum::Unauthorized);
         }
         if quest.status == QuestStatus::Archived || quest.status == QuestStatus::Cancelled {
-            return Err(Error::EnrollmentClosed);
+            return Err(QuestErrorEnum::EnrollmentClosed);
         }
         let key = DataKey::InviteCommitment(quest_id, commitment.clone());
         env.storage().persistent().set(&key, &true);
@@ -776,12 +790,12 @@ impl QuestContract {
         owner: Address,
         quest_id: u32,
         commitment: BytesN<32>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), QuestErrorEnum> {
         owner.require_auth();
         Self::require_not_paused(&env)?;
         let quest = Self::load_quest(&env, quest_id)?;
         if quest.owner != owner {
-            return Err(Error::Unauthorized);
+            return Err(QuestErrorEnum::Unauthorized);
         }
         let key = DataKey::InviteCommitment(quest_id, commitment);
         env.storage().persistent().remove(&key);
@@ -818,16 +832,16 @@ impl QuestContract {
         enrollee: Address,
         quest_id: u32,
         preimage: Bytes,
-    ) -> Result<(), Error> {
+    ) -> Result<(), QuestErrorEnum> {
         enrollee.require_auth();
         Self::require_not_paused(&env)?;
 
         let quest = Self::load_quest(&env, quest_id)?;
         if quest.status == QuestStatus::Archived || quest.status == QuestStatus::Cancelled {
-            return Err(Error::EnrollmentClosed);
+            return Err(QuestErrorEnum::EnrollmentClosed);
         }
         if quest.deadline > 0 && env.ledger().timestamp() > quest.deadline {
-            return Err(Error::DeadlineExpired);
+            return Err(QuestErrorEnum::DeadlineExpired);
         }
 
         // Derive commitment from the submitted preimage.
@@ -843,7 +857,7 @@ impl QuestContract {
             .get::<_, bool>(&commitment_key)
             .unwrap_or(false)
         {
-            return Err(Error::InvalidInvite);
+            return Err(QuestErrorEnum::InvalidInvite);
         }
 
         // Commitment must not have been consumed already.
@@ -853,19 +867,19 @@ impl QuestContract {
             .get::<_, bool>(&used_key)
             .unwrap_or(false)
         {
-            return Err(Error::InviteAlreadyUsed);
+            return Err(QuestErrorEnum::InviteAlreadyUsed);
         }
 
         let enrollees = Self::load_enrollees(&env, quest_id);
 
         if let Some(max) = quest.max_enrollees {
             if enrollees.len() >= max {
-                return Err(Error::QuestFull);
+                return Err(QuestErrorEnum::QuestFull);
             }
         }
 
         if enrollees.contains(&enrollee) {
-            return Err(Error::AlreadyEnrolled);
+            return Err(QuestErrorEnum::AlreadyEnrolled);
         }
 
         // Mark invite as consumed before mutating enrollment state.
@@ -889,7 +903,11 @@ impl QuestContract {
     }
 
     /// Remove an enrollee from a quest. Owner only.
-    pub fn remove_enrollee(env: Env, quest_id: u32, enrollee: Address) -> Result<(), Error> {
+    pub fn remove_enrollee(
+        env: Env,
+        quest_id: u32,
+        enrollee: Address,
+    ) -> Result<(), QuestErrorEnum> {
         Self::require_not_paused(&env)?;
         let quest = Self::load_quest(&env, quest_id)?;
         quest.owner.require_auth();
@@ -914,14 +932,14 @@ impl QuestContract {
     /// placed a peer-review hold on the enrollee (see `place_leave_hold`).
     /// The hold exists so completion submissions awaiting peer approval
     /// cannot reference a non-enrollee.
-    pub fn leave_quest(env: Env, enrollee: Address, quest_id: u32) -> Result<(), Error> {
+    pub fn leave_quest(env: Env, enrollee: Address, quest_id: u32) -> Result<(), QuestErrorEnum> {
         enrollee.require_auth();
         Self::require_not_paused(&env)?;
         Self::load_quest(&env, quest_id)?;
 
         let hold_key = DataKey::LeaveHold(quest_id, enrollee.clone());
         if env.storage().persistent().has(&hold_key) {
-            return Err(Error::LeaveBlockedByPendingApproval);
+            return Err(QuestErrorEnum::LeaveBlockedByPendingApproval);
         }
 
         Self::internal_remove_enrollee(&env, quest_id, enrollee)
@@ -937,15 +955,15 @@ impl QuestContract {
         quest_id: u32,
         owner: Address,
         enrollee: Address,
-    ) -> Result<(), Error> {
+    ) -> Result<(), QuestErrorEnum> {
         owner.require_auth();
         Self::require_not_paused(&env)?;
         let quest = Self::load_quest(&env, quest_id)?;
         if quest.owner != owner {
-            return Err(Error::Unauthorized);
+            return Err(QuestErrorEnum::Unauthorized);
         }
         if !Self::load_enrollees(&env, quest_id).contains(&enrollee) {
-            return Err(Error::NotEnrolled);
+            return Err(QuestErrorEnum::NotEnrolled);
         }
 
         let hold_key = DataKey::LeaveHold(quest_id, enrollee);
@@ -962,12 +980,12 @@ impl QuestContract {
         quest_id: u32,
         owner: Address,
         enrollee: Address,
-    ) -> Result<(), Error> {
+    ) -> Result<(), QuestErrorEnum> {
         owner.require_auth();
         Self::require_not_paused(&env)?;
         let quest = Self::load_quest(&env, quest_id)?;
         if quest.owner != owner {
-            return Err(Error::Unauthorized);
+            return Err(QuestErrorEnum::Unauthorized);
         }
 
         let hold_key = DataKey::LeaveHold(quest_id, enrollee);
@@ -988,7 +1006,7 @@ impl QuestContract {
     /// Visibility does not gate direct reads. Even quests marked `Private`
     /// remain queryable by id; the flag only affects discovery helpers such as
     /// `list_public_quests` and `get_quests_by_category`.
-    pub fn get_quest(env: Env, quest_id: u32) -> Result<QuestInfo, Error> {
+    pub fn get_quest(env: Env, quest_id: u32) -> Result<QuestInfo, QuestErrorEnum> {
         let quest = Self::load_quest(&env, quest_id)?;
         Self::bump(&env, quest_id);
         Ok(quest)
@@ -998,7 +1016,10 @@ impl QuestContract {
     ///
     /// Returns all historical snapshots in chronological order (oldest first).
     /// Each snapshot captures the quest fields at the time of a previous update.
-    pub fn get_quest_version_history(env: Env, quest_id: u32) -> Result<Vec<QuestVersion>, Error> {
+    pub fn get_quest_version_history(
+        env: Env,
+        quest_id: u32,
+    ) -> Result<Vec<QuestVersion>, QuestErrorEnum> {
         Self::load_quest(&env, quest_id)?; // verify exists
         let history_key = DataKey::QuestVersionHistory(quest_id);
         let history: Vec<QuestVersion> = env
@@ -1014,7 +1035,7 @@ impl QuestContract {
     ///
     /// Like `get_quest`, this is readable for any existing quest id regardless
     /// of visibility. `Private` means unlisted, not confidential.
-    pub fn get_enrollees(env: Env, quest_id: u32) -> Result<Vec<Address>, Error> {
+    pub fn get_enrollees(env: Env, quest_id: u32) -> Result<Vec<Address>, QuestErrorEnum> {
         Self::load_quest(&env, quest_id)?; // verify exists
         let enrollees = Self::load_enrollees(&env, quest_id);
         Self::bump(&env, quest_id);
@@ -1022,7 +1043,7 @@ impl QuestContract {
     }
 
     /// Get all active participants for a quest, excluding suspended or inactive users.
-    pub fn get_participants(env: Env, quest_id: u32) -> Result<Vec<Address>, Error> {
+    pub fn get_participants(env: Env, quest_id: u32) -> Result<Vec<Address>, QuestErrorEnum> {
         Self::load_quest(&env, quest_id)?;
         let enrollees = Self::load_enrollees(&env, quest_id);
         let mut active_participants = Vec::new(&env);
@@ -1037,7 +1058,7 @@ impl QuestContract {
     }
 
     /// Suspend a user address. Admin only.
-    pub fn suspend_user(env: Env, admin: Address, user: Address) -> Result<(), Error> {
+    pub fn suspend_user(env: Env, admin: Address, user: Address) -> Result<(), QuestErrorEnum> {
         Self::require_admin(&env, &admin)?;
         Self::require_not_paused(&env)?;
         let key = DataKey::UserStatus(user.clone());
@@ -1050,7 +1071,7 @@ impl QuestContract {
     }
 
     /// Reactivate a suspended user address. Admin only.
-    pub fn reactivate_user(env: Env, admin: Address, user: Address) -> Result<(), Error> {
+    pub fn reactivate_user(env: Env, admin: Address, user: Address) -> Result<(), QuestErrorEnum> {
         Self::require_admin(&env, &admin)?;
         Self::require_not_paused(&env)?;
         let key = DataKey::UserStatus(user.clone());
@@ -1080,7 +1101,7 @@ impl QuestContract {
     ///
     /// Visibility does not restrict this check; callers that know the quest id
     /// can query enrollment state directly.
-    pub fn is_enrollee(env: Env, quest_id: u32, user: Address) -> Result<bool, Error> {
+    pub fn is_enrollee(env: Env, quest_id: u32, user: Address) -> Result<bool, QuestErrorEnum> {
         Self::load_quest(&env, quest_id)?;
         let enrollees = Self::load_enrollees(&env, quest_id);
         Ok(enrollees.contains(&user))
@@ -1088,7 +1109,7 @@ impl QuestContract {
 
     /// Update or clear the deadline for a quest. Owner only.
     /// Pass 0 to remove the deadline.
-    pub fn set_deadline(env: Env, quest_id: u32, deadline: u64) -> Result<(), Error> {
+    pub fn set_deadline(env: Env, quest_id: u32, deadline: u64) -> Result<(), QuestErrorEnum> {
         Self::require_not_paused(&env)?;
         let mut quest = Self::load_quest(&env, quest_id)?;
         quest.owner.require_auth();
@@ -1101,7 +1122,7 @@ impl QuestContract {
     }
 
     /// Returns true if the quest has a non-zero deadline that has passed.
-    pub fn is_expired(env: Env, quest_id: u32) -> Result<bool, Error> {
+    pub fn is_expired(env: Env, quest_id: u32) -> Result<bool, QuestErrorEnum> {
         let quest = Self::load_quest(&env, quest_id)?;
         if quest.deadline == 0 {
             return Ok(false);
@@ -1118,7 +1139,11 @@ impl QuestContract {
     ///
     /// This only controls whether the quest appears in public discovery lists.
     /// It does not provide on-chain confidentiality.
-    pub fn set_visibility(env: Env, quest_id: u32, visibility: Visibility) -> Result<(), Error> {
+    pub fn set_visibility(
+        env: Env,
+        quest_id: u32,
+        visibility: Visibility,
+    ) -> Result<(), QuestErrorEnum> {
         Self::require_not_paused(&env)?;
         let mut quest = Self::load_quest(&env, quest_id)?;
         quest.owner.require_auth();
@@ -1241,31 +1266,31 @@ impl QuestContract {
 
     // --- internals ---
 
-    fn load_quest(env: &Env, id: u32) -> Result<QuestInfo, Error> {
+    fn load_quest(env: &Env, id: u32) -> Result<QuestInfo, QuestErrorEnum> {
         env.storage()
             .persistent()
             .get(&DataKey::Quest(id))
-            .ok_or(Error::NotFound)
+            .ok_or(QuestErrorEnum::NotFound)
     }
 
-    fn require_admin(env: &Env, admin: &Address) -> Result<(), Error> {
+    fn require_admin(env: &Env, admin: &Address) -> Result<(), QuestErrorEnum> {
         admin.require_auth();
         let stored_admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
-            .ok_or(Error::Unauthorized)?;
+            .ok_or(QuestErrorEnum::Unauthorized)?;
 
         if *admin != stored_admin {
-            return Err(Error::Unauthorized);
+            return Err(QuestErrorEnum::Unauthorized);
         }
 
         Ok(())
     }
 
-    fn require_not_paused(env: &Env) -> Result<(), Error> {
+    fn require_not_paused(env: &Env) -> Result<(), QuestErrorEnum> {
         if common::is_paused_by_key(env, &DataKey::Paused) {
-            Err(Error::Paused)
+            Err(QuestErrorEnum::Paused)
         } else {
             Ok(())
         }
@@ -1319,7 +1344,11 @@ impl QuestContract {
         quest.visibility = visibility;
     }
 
-    fn internal_remove_enrollee(env: &Env, quest_id: u32, enrollee: Address) -> Result<(), Error> {
+    fn internal_remove_enrollee(
+        env: &Env,
+        quest_id: u32,
+        enrollee: Address,
+    ) -> Result<(), QuestErrorEnum> {
         let enrollees = Self::load_enrollees(env, quest_id);
         let mut found = false;
         let mut new_list = Vec::new(env);
@@ -1334,7 +1363,7 @@ impl QuestContract {
         }
 
         if !found {
-            return Err(Error::NotEnrolled);
+            return Err(QuestErrorEnum::NotEnrolled);
         }
 
         env.storage()
@@ -1379,15 +1408,15 @@ impl QuestContract {
         common::extend_persistent_ttl(env, &key);
     }
 
-    fn validate_tags(tags: &Vec<String>) -> Result<(), Error> {
+    fn validate_tags(tags: &Vec<String>) -> Result<(), QuestErrorEnum> {
         if tags.len() > MAX_TAGS {
-            return Err(Error::InvalidInput);
+            return Err(QuestErrorEnum::InvalidInput);
         }
 
         for i in 0..tags.len() {
-            let tag = tags.get(i).ok_or(Error::InvalidInput)?;
+            let tag = tags.get(i).ok_or(QuestErrorEnum::InvalidInput)?;
             if tag.is_empty() || tag.len() > MAX_TAG_LEN {
-                return Err(Error::InvalidInput);
+                return Err(QuestErrorEnum::InvalidInput);
             }
         }
 
@@ -1398,7 +1427,9 @@ impl QuestContract {
         extend_instance_ttl(env);
         common::extend_persistent_ttl(env, &DataKey::Quest(quest_id));
         common::extend_persistent_ttl(env, &DataKey::Enrollees(quest_id));
-        common::extend_persistent_ttl(env, &DataKey::QuestVersionHistory(quest_id));
+        if env.storage().persistent().has(&DataKey::QuestVersionHistory(quest_id)) {
+            common::extend_persistent_ttl(env, &DataKey::QuestVersionHistory(quest_id));
+        }
     }
 }
 

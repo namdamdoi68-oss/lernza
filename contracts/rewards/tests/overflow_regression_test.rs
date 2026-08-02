@@ -2,7 +2,7 @@ use certificate::CertificateContract;
 use common::Visibility;
 use milestone::{MilestoneContract, MilestoneContractClient};
 use quest::{QuestContract, QuestContractClient};
-use rewards::{Error as RewardsError, RewardsContract, RewardsContractClient};
+use rewards::{RewardsContract, RewardsContractClient, RewardsErrorEnum as RewardsError};
 use soroban_sdk::{testutils::Address as _, token::StellarAssetClient, Address, Env, String, Vec};
 
 #[test]
@@ -45,6 +45,7 @@ fn test_insufficient_pool_rejects_large_distribution() {
         &Vec::<String>::new(&env),
         &token_addr,
         &Visibility::Public,
+        &None,
         &None,
     );
     QuestContractClient::new(&env, &quest_id).add_enrollee(&0u32, &enrollee);

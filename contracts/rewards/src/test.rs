@@ -105,7 +105,7 @@ fn test_initialize_twice_fails() {
     let fake_token = Address::generate(&env);
     let fake_admin = Address::generate(&env);
     let result = client.try_initialize(&fake_admin, &fake_token, &quest_id, &milestone_id);
-    assert_eq!(result, Err(Ok(Error::AlreadyInitialized)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::AlreadyInitialized)));
 }
 
 #[test]
@@ -316,7 +316,7 @@ fn test_fund_invalid_amount() {
     );
 
     let result = client.try_fund_quest(&owner, &q_id, &0);
-    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::InvalidAmount)));
 }
 
 #[test]
@@ -350,7 +350,7 @@ fn test_fund_quest_overflow() {
     );
     // Amounts above MAX_REWARD_AMOUNT are rejected before any storage writes
     let result = client.try_fund_quest(&owner, &q_id, &i128::MAX);
-    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::InvalidAmount)));
 }
 
 #[test]
@@ -398,7 +398,7 @@ fn test_distribute_reward_overflow() {
     client.distribute_reward(&owner, &q_id, &ms_id, &enrollee, &MAX_REWARD_AMOUNT);
     // Try to distribute again — idempotency rejects the duplicate
     let result = client.try_distribute_reward(&owner, &q_id, &ms_id, &enrollee, &MAX_REWARD_AMOUNT);
-    assert_eq!(result, Err(Ok(Error::AlreadyPaid)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::AlreadyPaid)));
 }
 
 #[test]
@@ -446,7 +446,7 @@ fn test_distribute_reward_earnings_overflow() {
     client.distribute_reward(&owner, &q_id, &ms_id, &enrollee, &MAX_REWARD_AMOUNT);
     // Try to distribute again — idempotency rejects the duplicate
     let result = client.try_distribute_reward(&owner, &q_id, &ms_id, &enrollee, &MAX_REWARD_AMOUNT);
-    assert_eq!(result, Err(Ok(Error::AlreadyPaid)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::AlreadyPaid)));
 }
 
 #[test]
@@ -481,7 +481,7 @@ fn test_zero_amount_edge_cases() {
     );
     // Zero fund
     let result = client.try_fund_quest(&owner, &q_id, &0);
-    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::InvalidAmount)));
     // Fund with positive
     client.fund_quest(&owner, &q_id, &100);
     let ms_id = milestone_client.create_milestone(
@@ -496,7 +496,7 @@ fn test_zero_amount_edge_cases() {
     milestone_client.verify_completion(&owner, &q_id, &ms_id, &enrollee);
     // Zero distribute
     let result = client.try_distribute_reward(&owner, &q_id, &ms_id, &enrollee, &0);
-    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::InvalidAmount)));
 }
 
 #[test]
@@ -538,7 +538,7 @@ fn test_different_funder_unauthorized() {
 
     // Other person tries to add funds to same quest (fails because not owner)
     let result = client.try_fund_quest(&other, &q_id, &1_000);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::Unauthorized)));
 }
 
 #[test]
@@ -713,7 +713,7 @@ fn test_insufficient_pool() {
 
     // No milestone created/verified, so distribute should fail with MilestoneNotCompleted
     let result = client.try_distribute_reward(&owner, &q_id, &0, &enrollee, &500);
-    assert_eq!(result, Err(Ok(Error::MilestoneNotCompleted)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::MilestoneNotCompleted)));
 }
 
 #[test]
@@ -753,7 +753,7 @@ fn test_distribute_unauthorized() {
     client.fund_quest(&owner, &q_id, &5_000);
 
     let result = client.try_distribute_reward(&imposter, &q_id, &0, &enrollee, &100);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::Unauthorized)));
 }
 
 #[test]
@@ -775,7 +775,7 @@ fn test_distribute_quest_not_funded() {
     let enrollee = Address::generate(&env);
     // Even if quest exists, if not funded it has no authority
     let result = client.try_distribute_reward(&owner, &999, &0, &enrollee, &100);
-    assert_eq!(result, Err(Ok(Error::QuestNotFunded)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::QuestNotFunded)));
     let _ = quest_id;
 }
 
@@ -813,7 +813,7 @@ fn test_initialize_no_auth_guard() {
         &quest_id,
         &milestone_id,
     );
-    assert_eq!(result, Err(Ok(Error::AlreadyInitialized)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::AlreadyInitialized)));
 }
 
 /// MED-02: Self-distribution should be rejected
@@ -865,7 +865,7 @@ fn test_authority_self_distribution() {
 
     // Authority cannot distribute reward pool tokens back to themselves
     let result = client.try_distribute_reward(&owner, &q_id, &ms_id, &owner, &1_000);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::Unauthorized)));
 
     let token_client = TokenClient::new(&env, &token_addr);
     assert_eq!(token_client.balance(&owner), 5_000);
@@ -913,7 +913,7 @@ fn test_distribute_reward_requires_milestone_completion() {
 
     // Try to distribute reward without milestone completion - should fail
     let result = client.try_distribute_reward(&owner, &q_id, &0, &enrollee, &100);
-    assert_eq!(result, Err(Ok(Error::MilestoneNotCompleted)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::MilestoneNotCompleted)));
 
     // Verify no tokens were transferred
     let token_client = TokenClient::new(&env, &token_addr);
@@ -1016,7 +1016,7 @@ fn test_fund_quest_broken_contract_linkage() {
 
     // Try to fund a quest - should fail because quest contract doesn't exist
     let result = client.try_fund_quest(&funder, &1, &500);
-    assert_eq!(result, Err(Ok(Error::QuestLookupFailed)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::QuestLookupFailed)));
 }
 
 /// fix(#160) regression test: nonexistent quest should fail with QuestLookupFailed
@@ -1050,7 +1050,7 @@ fn test_fund_quest_nonexistent_fails() {
 
     // Try to fund a quest that doesn't exist
     let result = client.try_fund_quest(&funder, &999, &500);
-    assert_eq!(result, Err(Ok(Error::QuestLookupFailed)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::QuestLookupFailed)));
 }
 
 /// fix(#85) verification: only quest owner can fund
@@ -1091,7 +1091,7 @@ fn test_fund_quest_not_owner_fails() {
 
     // Attacker tries to fund and become authority - should FAIL with Unauthorized
     let result = client.try_fund_quest(&attacker, &q_id, &1);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::Unauthorized)));
 
     // Pool remains empty
     assert_eq!(client.get_pool_balance(&q_id), 0);
@@ -1154,7 +1154,7 @@ fn test_distribute_reward_idempotent() {
 
     // Retry of the exact same payout is rejected with AlreadyPaid
     let result = client.try_distribute_reward(&owner, &q_id, &ms_id, &enrollee, &100);
-    assert_eq!(result, Err(Ok(Error::AlreadyPaid)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::AlreadyPaid)));
 
     // Balance unchanged — no double payout
     assert_eq!(token_client.balance(&enrollee), 100);
@@ -1192,7 +1192,7 @@ fn test_fund_quest_zero_amount_rejected() {
         &None,
     );
     let result = client.try_fund_quest(&owner, &q_id, &0);
-    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::InvalidAmount)));
 }
 
 #[test]
@@ -1223,7 +1223,7 @@ fn test_fund_quest_negative_amount_rejected() {
         &None,
     );
     let result = client.try_fund_quest(&owner, &q_id, &-1);
-    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::InvalidAmount)));
 }
 
 #[test]
@@ -1272,7 +1272,7 @@ fn test_distribute_reward_zero_amount_rejected() {
     milestone_client.verify_completion(&owner, &q_id, &ms_id, &enrollee);
 
     let result = client.try_distribute_reward(&owner, &q_id, &ms_id, &enrollee, &0);
-    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::InvalidAmount)));
 }
 
 #[test]
@@ -1321,7 +1321,7 @@ fn test_distribute_reward_negative_amount_rejected() {
     milestone_client.verify_completion(&owner, &q_id, &ms_id, &enrollee);
 
     let result = client.try_distribute_reward(&owner, &q_id, &ms_id, &enrollee, &-1);
-    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::InvalidAmount)));
 }
 
 #[test]
@@ -1354,7 +1354,7 @@ fn test_fund_quest_amount_exceeds_max_rejected() {
     );
 
     let result = client.try_fund_quest(&owner, &q_id, &(MAX_REWARD_AMOUNT + 1));
-    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::InvalidAmount)));
 }
 
 #[test]
@@ -1405,7 +1405,7 @@ fn test_distribute_reward_amount_exceeds_max_rejected() {
 
     let result =
         client.try_distribute_reward(&owner, &q_id, &ms_id, &enrollee, &(MAX_REWARD_AMOUNT + 1));
-    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::InvalidAmount)));
 }
 
 /// Funding with a non-contract address stored as token_addr must be rejected
@@ -1460,7 +1460,7 @@ fn test_fund_quest_invalid_token_address() {
 
     // Attempt to fund — rewards contract will try_symbol() on the fake addr.
     let result = client.try_fund_quest(&owner, &q_id, &1_000);
-    assert_eq!(result, Err(Ok(Error::InvalidToken)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::InvalidToken)));
 
     // Pool must remain zero — no storage write should have happened.
     assert_eq!(client.get_pool_balance(&q_id), 0);
@@ -1561,7 +1561,7 @@ fn test_fund_quest_token_mismatch_rejected() {
 
     // fund_quest must reject due to token mismatch.
     let result = client.try_fund_quest(&owner, &q_id, &5_000);
-    assert_eq!(result, Err(Ok(Error::InvalidToken)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::InvalidToken)));
 
     // Pool must remain zero.
     assert_eq!(client.get_pool_balance(&q_id), 0);
@@ -1695,12 +1695,12 @@ fn test_refund_pool_requires_archive() {
 
     // Should fail — quest is still active
     let result = client.try_refund_pool(&owner, &q_id, &1_000);
-    assert_eq!(result, Err(Ok(Error::QuestNotArchived)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::QuestNotArchived)));
 
     // Archive but don't wait — should fail with RefundWindowNotOpen
     quest_client.archive_quest(&q_id);
     let result = client.try_refund_pool(&owner, &q_id, &1_000);
-    assert_eq!(result, Err(Ok(Error::RefundWindowNotOpen)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::RefundWindowNotOpen)));
 }
 
 #[test]
@@ -1743,7 +1743,7 @@ fn test_refund_pool_unauthorized() {
 
     // Non-authority should be rejected
     let result = client.try_refund_pool(&attacker, &q_id, &1_000);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::Unauthorized)));
 }
 
 #[test]
@@ -1785,7 +1785,7 @@ fn test_refund_pool_insufficient_balance() {
 
     // Requesting more than the pool holds
     let result = client.try_refund_pool(&owner, &q_id, &5_000);
-    assert_eq!(result, Err(Ok(Error::InsufficientPool)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::InsufficientPool)));
 }
 
 #[test]
@@ -1821,7 +1821,7 @@ fn test_refund_pool_not_funded() {
 
     // Quest was never funded — no authority stored
     let result = client.try_refund_pool(&owner, &q_id, &100);
-    assert_eq!(result, Err(Ok(Error::QuestNotFunded)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::QuestNotFunded)));
 }
 
 #[test]
@@ -1860,7 +1860,7 @@ fn test_refund_pool_invalid_amount() {
     quest_client.archive_quest(&q_id);
 
     let result = client.try_refund_pool(&owner, &q_id, &0);
-    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::InvalidAmount)));
 }
 
 #[test]
@@ -1901,13 +1901,13 @@ fn test_refund_pool_grace_period_enforced() {
     // Initial archived_at + 1 hour — should fail
     env.ledger().set_timestamp(env.ledger().timestamp() + 3600);
     let result = client.try_refund_pool(&owner, &q_id, &1_000);
-    assert_eq!(result, Err(Ok(Error::RefundWindowNotOpen)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::RefundWindowNotOpen)));
 
     // 6.9 days — should fail
     env.ledger()
         .set_timestamp(env.ledger().timestamp() + 604_800 - 3600 - 10);
     let result = client.try_refund_pool(&owner, &q_id, &1_000);
-    assert_eq!(result, Err(Ok(Error::RefundWindowNotOpen)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::RefundWindowNotOpen)));
 
     // Exactly 7 days — should succeed
     env.ledger().set_timestamp(env.ledger().timestamp() + 10);
@@ -1972,7 +1972,7 @@ fn test_refund_pool_respects_reserved_obligations() {
 
     // Try to refund 4,000 (shoud fail, only 3,000 refundable)
     let result = client.try_refund_pool(&owner, &q_id, &4_000);
-    assert_eq!(result, Err(Ok(Error::InsufficientPool)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::InsufficientPool)));
 
     // Refund 3,000 (should succeed)
     client.refund_pool(&owner, &q_id, &3_000);
@@ -2179,7 +2179,7 @@ fn test_set_refund_grace_period_unauthorized() {
 
     let unauthorized = Address::generate(&env);
     let result = client.try_set_refund_grace_period(&unauthorized, &259_200);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::Unauthorized)));
 }
 
 #[test]
@@ -2226,7 +2226,7 @@ fn test_refund_with_custom_grace_period() {
 
     // Try to refund before grace period (should fail)
     let result = client.try_refund_pool(&owner, &q_id, &5_000);
-    assert_eq!(result, Err(Ok(Error::RefundWindowNotOpen)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::RefundWindowNotOpen)));
 
     // Advance time by 1 day + 1 second
     env.ledger()
@@ -2259,7 +2259,7 @@ fn test_pause_blocks_grace_period_updates() {
 
     // Try to update grace period while paused (should fail)
     let result = client.try_set_refund_grace_period(&admin, &259_200);
-    assert_eq!(result, Err(Ok(Error::Paused)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::Paused)));
 
     // Unpause and try again (should work)
     client.unpause(&admin);
@@ -2360,6 +2360,7 @@ fn test_refund_expired_pool_success_without_archiving() {
         &token_addr,
         &Visibility::Public,
         &None,
+        &None,
     );
 
     // Creator funds the pool but the quest is never completed or archived.
@@ -2370,7 +2371,7 @@ fn test_refund_expired_pool_success_without_archiving() {
 
     // Deadline hasn't passed yet — no recovery available.
     let result = client.try_refund_expired_pool(&owner, &q_id);
-    assert_eq!(result, Err(Ok(Error::QuestNotExpired)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::QuestNotExpired)));
 
     // Advance past the deadline plus the default 7-day grace period.
     env.ledger().set_timestamp(deadline + 604_800 + 1);
@@ -2415,13 +2416,14 @@ fn test_refund_expired_pool_no_deadline() {
         &token_addr,
         &Visibility::Public,
         &None,
+        &None,
     );
 
     client.fund_quest(&owner, &q_id, &5_000);
 
     // No deadline was ever set — expiry-based refund is not available.
     let result = client.try_refund_expired_pool(&owner, &q_id);
-    assert_eq!(result, Err(Ok(Error::QuestNotExpired)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::QuestNotExpired)));
 }
 
 #[test]
@@ -2453,6 +2455,7 @@ fn test_refund_expired_pool_grace_period_enforced() {
         &token_addr,
         &Visibility::Public,
         &None,
+        &None,
     );
 
     client.fund_quest(&owner, &q_id, &5_000);
@@ -2462,7 +2465,7 @@ fn test_refund_expired_pool_grace_period_enforced() {
     // Deadline just passed, but the grace period has not elapsed yet.
     env.ledger().set_timestamp(deadline + 1);
     let result = client.try_refund_expired_pool(&owner, &q_id);
-    assert_eq!(result, Err(Ok(Error::RefundWindowNotOpen)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::RefundWindowNotOpen)));
 }
 
 #[test]
@@ -2495,6 +2498,7 @@ fn test_refund_expired_pool_unauthorized() {
         &token_addr,
         &Visibility::Public,
         &None,
+        &None,
     );
 
     client.fund_quest(&owner, &q_id, &5_000);
@@ -2503,7 +2507,7 @@ fn test_refund_expired_pool_unauthorized() {
     env.ledger().set_timestamp(deadline + 604_800 + 1);
 
     let result = client.try_refund_expired_pool(&attacker, &q_id);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::Unauthorized)));
 }
 
 #[test]
@@ -2532,6 +2536,7 @@ fn test_refund_expired_pool_not_funded() {
         &token_addr,
         &Visibility::Public,
         &None,
+        &None,
     );
 
     let deadline = env.ledger().timestamp() + 1_000;
@@ -2540,7 +2545,7 @@ fn test_refund_expired_pool_not_funded() {
 
     // Quest was never funded — no authority stored.
     let result = client.try_refund_expired_pool(&owner, &q_id);
-    assert_eq!(result, Err(Ok(Error::QuestNotFunded)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::QuestNotFunded)));
 }
 
 #[test]
@@ -2575,6 +2580,7 @@ fn test_refund_expired_pool_respects_reserved_obligations() {
         &soroban_sdk::Vec::<String>::new(&env),
         &token_addr,
         &Visibility::Public,
+        &None,
         &None,
     );
 
@@ -2636,6 +2642,7 @@ fn test_refund_expired_pool_paused() {
         &token_addr,
         &Visibility::Public,
         &None,
+        &None,
     );
 
     client.fund_quest(&owner, &q_id, &5_000);
@@ -2646,5 +2653,5 @@ fn test_refund_expired_pool_paused() {
     client.pause(&admin);
 
     let result = client.try_refund_expired_pool(&owner, &q_id);
-    assert_eq!(result, Err(Ok(Error::Paused)));
+    assert_eq!(result, Err(Ok(RewardsErrorEnum::Paused)));
 }

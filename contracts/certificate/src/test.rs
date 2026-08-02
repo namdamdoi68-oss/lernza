@@ -1,6 +1,6 @@
 use soroban_sdk::{testutils::Address as _, Address, Env, String, Vec};
 
-use crate::{CertificateContract, CertificateContractClient, Error};
+use crate::{CertificateContract, CertificateContractClient, CertificateErrorEnum as Error};
 
 fn setup() -> (Env, CertificateContractClient<'static>, Address) {
     let env = Env::default();

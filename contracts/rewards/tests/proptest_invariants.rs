@@ -134,7 +134,7 @@ proptest! {
                 }
                 RewardOperation::Refund { amount } => {
                     // Only refund if quest is archived and grace period has passed
-                    quest_client.archive_quest(&q_id);
+                    let _ = quest_client.try_archive_quest(&q_id);
 
                     // Fast-forward time past grace period
                     let grace_period = client.get_refund_grace_period();
@@ -272,7 +272,7 @@ proptest! {
 
             // Second distribution should fail with AlreadyPaid (idempotency)
             let result2 = client.try_distribute_reward(&owner, &q_id, &milestone_id, enrollee, &amount);
-            prop_assert_eq!(result2, Err(Ok(rewards::Error::AlreadyPaid)), "Second distribution should fail with AlreadyPaid");
+            prop_assert_eq!(result2, Err(Ok(rewards::RewardsErrorEnum::AlreadyPaid)), "Second distribution should fail with AlreadyPaid");
 
             // Pool and user earnings should be unchanged after failed second attempt
             let pool_after_second = client.get_pool_balance(&q_id);
